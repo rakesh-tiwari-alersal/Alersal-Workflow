@@ -7,9 +7,9 @@ from scipy.signal import periodogram, find_peaks
 
 # Define analysis ranges
 RANGES = [
-    (15, 50),
+    (15, 40),
     (30, 60),
-    (60, 90),
+    (50, 90),
     (150, 350),
     (200, 500),
     (300, 700)
@@ -22,11 +22,11 @@ def analyze_single_range(series, range_min, range_max):
     if np.any(closes <= 0):
         print("Error: Non-positive closing prices detected")
         return None
-        
-    log_returns = np.log(closes[1:]) - np.log(closes[:-1])
     
+    closes_diff = closes[1:] - closes[:-1]
+        
     # Compute PSD
-    frequencies, psd = periodogram(log_returns, fs=1, scaling='density', window='hann')
+    frequencies, psd = periodogram(closes_diff, fs=1, scaling='density', window='hann')
     
     # Filter out zero frequency
     non_zero_mask = frequencies > 0
@@ -76,7 +76,7 @@ def analyze_single_range(series, range_min, range_max):
         
     # Round values
     top_peaks['Period'] = top_peaks['Period'].round().astype(int)
-    top_peaks['Power'] = top_peaks['Power'].round(2)
+    top_peaks['Power'] = top_peaks['Power'].round(0).astype(int)
     top_peaks['% Contribution'] = top_peaks['% Contribution'].round(2)
     
     return top_peaks
@@ -162,8 +162,8 @@ def main():
     # Prepare output for CSV
     output_rows = []
     
-    # First group: 15-50, 30-60, 60-90
-    group1_ranges = ["15-50", "30-60", "60-90"]
+    # First group: 15-40, 30-60, 50-90
+    group1_ranges = ["15-40", "30-60", "50-90"]
     group1_data = []
     
     for range_name in group1_ranges:

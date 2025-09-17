@@ -2,13 +2,15 @@ import argparse
 import subprocess
 import sys
 import re
+import os
+import csv
 
 def main():
     """
-    Wrapper script that finds the first three "dips" in R-squared values for each
-    short-term lag, iterating through long-term lags in descending order, with a 0.5% threshold.
+    Wrapper script that runs compute_yw_R2.py for all combinations of short and long lags,
+    and outputs results in a matrix format suitable for contour plotting.
     """
-    parser = argparse.ArgumentParser(description='Run compute_yw_R2.py with various lag combinations and find the first three dips in R^2.')
+    parser = argparse.ArgumentParser(description='Run compute_yw_R2.py with various lag combinations and output results in matrix format.')
     parser.add_argument('-f', '--file', type=str, required=True, help='Input file name (e.g., GC=F.csv) for compute_yw_R2.py')
     args = parser.parse_args()
 
@@ -23,18 +25,27 @@ def main():
         493, 510, 528, 534, 541, 551, 564, 582,
         605, 622, 636, 645, 653, 659, 676
     ]
-    # Reverse the long-term lags to iterate from largest to smallest
-    long_term_lags.reverse()
 
-    all_dips = []
-
+    # Create results directory if it doesn't exist
+    os.makedirs('R2_results', exist_ok=True)
+    
+    # Extract base filename without extension for output file
+    base_filename = os.path.splitext(os.path.basename(args.file))[0]
+    output_file = f'R2_results/R2_{base_filename}.csv'
+    
+    # Prepare data matrix
+    results_matrix = []
+    
+    # Add header row (first cell is empty, then long term lags)
+    header_row = ['Short Cycle/Long Cycle'] + long_term_lags
+    results_matrix.append(header_row)
+    
+    # Process each short-term lag
     for st_lag in short_term_lags:
-        print(f"\nAnalyzing short-term lag {st_lag}...")
+        print(f"Processing short-term lag {st_lag}...")
+        row_data = [st_lag]  # First column is the short-term lag
         
-        dips_found = 0
-        previous_r_squared = None
-        
-        # Iterate through the reversed long-term lags to find dips
+        # Process each long-term lag
         for lt_lag in long_term_lags:
             lags = f"{st_lag},{lt_lag}"
             
@@ -48,37 +59,26 @@ def main():
                 match = re.search(r"Linear OLS \(Polynomial Degree 1\): (-?\d+\.\d+)", output)
                 if match:
                     current_r_squared = float(match.group(1))
+                    row_data.append(current_r_squared)
+                else:
+                    row_data.append(None)  # Or some indicator of missing data
                     
-                    if previous_r_squared is not None and (previous_r_squared - current_r_squared) / previous_r_squared > 0.005:
-                        # Found a dip with more than a 0.5% decrease
-                        dips_found += 1
-                        all_dips.append({
-                            'r_squared': previous_r_squared,
-                            'short_lag': st_lag,
-                            'long_lag': long_term_lags[long_term_lags.index(lt_lag) - 1]
-                        })
-                        print(f"  Dip #{dips_found} found at long-term lag {long_term_lags[long_term_lags.index(lt_lag) - 1]} with R^2: {previous_r_squared:.4f}")
-                        
-                        if dips_found >= 3:
-                            break # Stop after finding 3 dips
-                    
-                    previous_r_squared = current_r_squared
-            
             except subprocess.CalledProcessError as e:
                 print(f"Error running compute_yw_R2.py for lags {lags}: {e.stderr}", file=sys.stderr)
+                row_data.append(None)
             except Exception as e:
                 print(f"An unexpected error occurred: {e}", file=sys.stderr)
-
-    # Sort the collected results by R-squared in descending order
-    all_dips.sort(key=lambda x: x['r_squared'], reverse=True)
+                row_data.append(None)
+        
+        # Add completed row to matrix
+        results_matrix.append(row_data)
     
-    # Print the top 10 combinations
-    print("\n--- Top 10 Dip-Point Combinations with Highest R^2 ---")
-    if not all_dips:
-        print("No results were generated. Please check the input file and script paths.")
-    else:
-        for i, result in enumerate(all_dips[:10]):
-            print(f"{i+1}. R^2: {result['r_squared']:.4f}, Lags: ({result['short_lag']}, {result['long_lag']})")
+    # Write results to CSV file
+    with open(output_file, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerows(results_matrix)
+    
+    print(f"Results saved to {output_file}")
 
 if __name__ == "__main__":
     main()

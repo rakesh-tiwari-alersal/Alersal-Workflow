@@ -6,9 +6,9 @@ from statsmodels.tsa.stattools import pacf
 
 # Define analysis ranges
 RANGES = [
-    (15, 50),
+    (15, 40),
     (30, 60),
-    (60, 90),
+    (50, 90),
     (150, 350),
     (200, 500),
     (300, 700)
@@ -134,8 +134,8 @@ def main():
     # Prepare output for CSV
     output_rows = []
     
-    # First group: 15-50, 30-60, 60-90
-    group1_ranges = ["15-50", "30-60", "60-90"]
+    # First group: 15-40, 30-60, 50-90
+    group1_ranges = ["15-40", "30-60", "50-90"]
     group1_data = []
     
     for range_name in group1_ranges:
