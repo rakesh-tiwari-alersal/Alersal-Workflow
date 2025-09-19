@@ -24,6 +24,7 @@ def analyze_single_range(series, range_min, range_max):
         return None
     
     closes_diff = closes[1:] - closes[:-1]
+#   closes_diff = np.log(closes[1:]) - np.log(closes[:-1])
         
     # Compute PSD
     frequencies, psd = periodogram(closes_diff, fs=1, scaling='density', window='hann')
