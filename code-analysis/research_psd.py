@@ -12,7 +12,7 @@ RANGES = [
     (50, 90),
     (150, 350),
     (200, 500),
-    (300, 700)
+    (350, 700)
 ]
 
 def analyze_single_range(series, range_min, range_max):
@@ -166,8 +166,8 @@ def main():
         else:
             group1_data.append(pd.DataFrame(columns=['Period', '% Power']))
     
-    # Second group: 150-350, 200-500, 300-700
-    group2_ranges = ["150-350", "200-500", "300-700"]
+    # Second group: 150-350, 200-500, 350-700
+    group2_ranges = ["150-350", "200-500", "350-700"]
     group2_data = []
     
     for range_name in group2_ranges:
