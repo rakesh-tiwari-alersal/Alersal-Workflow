@@ -53,7 +53,7 @@ def main():
         "-l", "--long_lags",
         type=str,
         required=True,
-        help="Comma-separated list of long lags (up to 3), e.g. 237,273,291"
+        help="Comma-separated list of long lags (up to 4), e.g. 237,273,291,309"
     )
     parser.add_argument(
         "-s", "--short_lags",
@@ -71,9 +71,9 @@ def main():
         print(f"Error: data file not found: {data_file}", file=sys.stderr)
         sys.exit(2)
 
-    # Parse lag lists (allow up to 3 for each)
+    # Parse lag lists (allow up to 4 long lags)
     try:
-        long_lags = parse_lag_list(args.long_lags, max_allowed=3, name="long_lags")
+        long_lags = parse_lag_list(args.long_lags, max_allowed=4, name="long_lags")
         short_lags = parse_lag_list(args.short_lags, max_allowed=3, name="short_lags")
     except ValueError as e:
         print(f"Argument error: {e}", file=sys.stderr)
@@ -107,6 +107,7 @@ def main():
                     "Lag (long,short)": f"{lt_lag},{st_lag}",
                     "Confirmed Peaks": confirmed_peaks,
                     "Confirmed Valleys": confirmed_valleys,
+                    "Confirmed Total": confirmed_total,
                     "Peak Hits": peak_hits,
                     "Valley Hits": valley_hits,
                     "Total Hits": total_hits,
@@ -121,6 +122,7 @@ def main():
                     "Lag (long,short)": f"{lt_lag},{st_lag}",
                     "Confirmed Peaks": None,
                     "Confirmed Valleys": None,
+                    "Confirmed Total": None,
                     "Peak Hits": None,
                     "Valley Hits": None,
                     "Total Hits": None,
@@ -132,6 +134,7 @@ def main():
                     "Lag (long,short)": f"{lt_lag},{st_lag}",
                     "Confirmed Peaks": None,
                     "Confirmed Valleys": None,
+                    "Confirmed Total": None,
                     "Peak Hits": None,
                     "Valley Hits": None,
                     "Total Hits": None,
@@ -144,10 +147,19 @@ def main():
     # NOTE: changed suffix to _9 as requested
     out_file = os.path.join("DTFib_results", f"DTFib_{base_filename}_9.csv")
 
+    # Sort by Hit % (numeric) descending, then write results to CSV
+    def _hit_key(r):
+        try:
+            return float(r["Hit %"]) if r.get("Hit %") is not None else -1.0
+        except Exception:
+            return -1.0
+
+    results.sort(key=_hit_key, reverse=True)
+
     # Write results to CSV
     with open(out_file, "w", newline="") as csvfile:
         fieldnames = ["Lag (long,short)", "Confirmed Peaks", "Confirmed Valleys",
-                      "Peak Hits", "Valley Hits", "Total Hits", "Hit %"]
+                      "Confirmed Total", "Peak Hits", "Valley Hits", "Total Hits", "Hit %"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in results:
@@ -157,4 +169,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
