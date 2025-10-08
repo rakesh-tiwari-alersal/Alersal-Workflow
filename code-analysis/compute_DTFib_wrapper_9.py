@@ -61,6 +61,12 @@ def main():
         required=True,
         help="Comma-separated list of short lags (up to 3), e.g. 23,27,31"
     )
+    parser.add_argument(
+        "-t", "--tolerance",
+        type=float,
+        default=0.075,
+        help="Tolerance passed to compute_DTFib.py for Fibonacci matching (default 0.005)"
+    )
     args = parser.parse_args()
 
     # Construct full path inside historical_data/
@@ -89,7 +95,8 @@ def main():
                     sys.executable,
                     "compute_DTFib.py",
                     "-f", data_file,
-                    "-l", lags
+                    "-l", lags,
+                    "-t", str(args.tolerance)
                 ]
                 completed = subprocess.run(
                     cmd,
