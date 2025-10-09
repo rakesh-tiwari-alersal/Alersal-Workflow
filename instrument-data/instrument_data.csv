@@ -2,7 +2,9 @@ Category,Instrument,Ticker
 Equity,XLE,XLE
 Equity,Uber,Uber
 Equity,Roku,Roku
-Index ,US Dollar Index,DX-Y.NYB
+Index,US Dollar Index,DX-Y.NYB
 Commodity,Crude Oil (WTI),CL=F
-Index ,GSPC,^GSPC
-Index, VIX, ^VIX
+Index,GSPC,^GSPC
+Index,VIX,^VIX
+Commodity,Gold,GC=F
+Crypto,Bitcoin,BTC-USD
