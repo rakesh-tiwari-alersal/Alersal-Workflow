@@ -64,7 +64,7 @@ def main():
     parser.add_argument(
         "-t", "--tolerance",
         type=float,
-        default=0.075,
+        default=0.0075,
         help="Tolerance passed to compute_DTFib.py for Fibonacci matching (default 0.005)"
     )
     args = parser.parse_args()
