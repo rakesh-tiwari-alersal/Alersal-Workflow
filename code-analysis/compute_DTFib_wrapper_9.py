@@ -110,6 +110,13 @@ def main():
                 confirmed_total = confirmed_peaks + confirmed_valleys
                 hit_pct = (total_hits / confirmed_total * 100.0) if confirmed_total > 0 else 0.0
 
+                # % PVS: peak / valley symmetry;
+                if confirmed_valleys is not None and confirmed_valleys > 0:
+                    pvs_val = confirmed_peaks / confirmed_valleys
+                    pvs_str = f"{pvs_val:.2f}"
+                else:
+                    pvs_str = None
+
                 results.append({
                     "Lag (long,short)": f"{lt_lag},{st_lag}",
                     "Confirmed Peaks": confirmed_peaks,
@@ -118,7 +125,8 @@ def main():
                     "Peak Hits": peak_hits,
                     "Valley Hits": valley_hits,
                     "Total Hits": total_hits,
-                    "Hit %": f"{hit_pct:.2f}"
+                    "Hit %": f"{hit_pct:.2f}",
+                    "% PVS": pvs_str
                 })
 
             except subprocess.CalledProcessError as e:
@@ -133,7 +141,8 @@ def main():
                     "Peak Hits": None,
                     "Valley Hits": None,
                     "Total Hits": None,
-                    "Hit %": None
+                    "Hit %": None,
+                    "% PVS": None
                 })
             except Exception as e:
                 print(f"Unexpected error for lags {lags}: {e}", file=sys.stderr)
@@ -145,7 +154,8 @@ def main():
                     "Peak Hits": None,
                     "Valley Hits": None,
                     "Total Hits": None,
-                    "Hit %": None
+                    "Hit %": None,
+                    "% PVS": None
                 })
 
     # Prepare output directory
@@ -154,19 +164,19 @@ def main():
     # NOTE: changed suffix to _9 as requested
     out_file = os.path.join("DTFib_results", f"DTFib_{base_filename}_9.csv")
 
-    # Sort by Hit % (numeric) descending, then write results to CSV
-    def _hit_key(r):
+    # Sort by Total Hits (numeric) descending, then write results to CSV
+    def _total_hits_key(r):
         try:
-            return float(r["Hit %"]) if r.get("Hit %") is not None else -1.0
+            return int(r["Total Hits"]) if r.get("Total Hits") is not None else -1
         except Exception:
-            return -1.0
+            return -1
 
-    results.sort(key=_hit_key, reverse=True)
+    results.sort(key=_total_hits_key, reverse=True)
 
     # Write results to CSV
     with open(out_file, "w", newline="") as csvfile:
         fieldnames = ["Lag (long,short)", "Confirmed Peaks", "Confirmed Valleys",
-                      "Confirmed Total", "Peak Hits", "Valley Hits", "Total Hits", "Hit %"]
+                      "Confirmed Total", "Peak Hits", "Valley Hits", "Total Hits", "Hit %", "% PVS"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in results:
