@@ -76,7 +76,8 @@ def analyze_single_range(series, range_min, range_max):
         top_peaks['% Power'] = 0
         
     # Round values and drop Power column
-    top_peaks['Period'] = top_peaks['Period'].round().astype(int)
+    # Keep Period as one-decimal precision (was rounded to integer previously)
+    top_peaks['Period'] = top_peaks['Period'].round(1)
     top_peaks['% Power'] = top_peaks['% Power'].round(2)
     top_peaks = top_peaks[['Period', '% Power']]  # Drop Power column
     

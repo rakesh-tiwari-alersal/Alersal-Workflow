@@ -8,7 +8,7 @@ Writes results to Beat_results/Beat_<file>_9.csv.
 Example:
   ./compute_Beats_9.py -f mydata.csv -l 237,273,291 -s 23,27 -r 291
   or multiple refs:
-  ./compute_Beats_9.py -f mydata.csv -l 237,273,291 -s 23,27 -r 224,288,367
+  ./compute_Beats_9.py -f mydata.csv -l 237,273,291 -s 23,27 -r 224.0,288.0,367.0
 """
 
 import argparse
@@ -33,6 +33,27 @@ def parse_lag_list(s: str, max_allowed: int, name: str) -> List[int]:
         raise ValueError(f"{name} must contain integers, comma-separated.")
 
 
+def parse_reference_list(s: str, max_allowed: int, name: str) -> List[float]:
+    """
+    Parse up to max_allowed comma-separated reference values.
+    Accepts floats; values returned rounded to 1 decimal.
+    """
+    items = [it.strip() for it in s.split(",") if it.strip()]
+    if not items:
+        raise ValueError(f"{name} must contain at least one value.")
+    if len(items) > max_allowed:
+        raise ValueError(f"{name} accepts up to {max_allowed} values (got {len(items)}).")
+    vals = []
+    for it in items:
+        try:
+            v = float(it)
+        except ValueError:
+            raise ValueError(f"{name} must contain numbers (optionally with one decimal).")
+        # store with one decimal precision
+        vals.append(round(v, 1))
+    return vals
+
+
 def compute_beat_cycle(short: int, long: int) -> Optional[float]:
     """Compute beat cycle (period) for given short and long lags."""
     if short <= 0 or long <= 0:
@@ -44,16 +65,14 @@ def compute_beat_cycle(short: int, long: int) -> Optional[float]:
         return None
 
 
-def compute_nbeats(long: int, beat_cycle: Optional[float], ref: int) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-    """Compute N-beats distance for ref-1, ref, ref+1."""
+def compute_nbeats_single(long: int, beat_cycle: Optional[float], ref: float) -> Optional[float]:
+    """Compute single N-beats distance for a given reference (ref can be float)."""
     if not beat_cycle or beat_cycle == 0:
-        return None, None, None
+        return None
     try:
-        targets = [ref - 1, ref, ref + 1]
-        n_vals = [abs(long - t) / beat_cycle for t in targets]
-        return tuple(n_vals)
+        return abs(long - ref) / beat_cycle
     except Exception:
-        return None, None, None
+        return None
 
 
 # ---------- Main ----------
@@ -63,7 +82,7 @@ def main():
     parser.add_argument("-f", "--file", required=True, help="CSV filename inside historical_data/")
     parser.add_argument("-l", "--long_lags", required=True, help="Comma-separated long lags (up to 4), e.g. 237,273,291,309")
     parser.add_argument("-s", "--short_lags", required=True, help="Comma-separated short lags (up to 3), e.g. 23,27,31")
-    parser.add_argument("-r", "--reference", type=str, required=True, help="Comma-separated reference cycle(s) (up to 3) from PSD analysis")
+    parser.add_argument("-r", "--reference", type=str, required=True, help="Comma-separated reference cycle(s) (up to 3) from PSD analysis; may be floats and will be rounded to 1 decimal")
     args = parser.parse_args()
 
     data_path = os.path.join("historical_data", args.file)
@@ -74,7 +93,8 @@ def main():
     try:
         long_lags = parse_lag_list(args.long_lags, 4, "long_lags")
         short_lags = parse_lag_list(args.short_lags, 3, "short_lags")
-        reference_list = parse_lag_list(args.reference, 3, "reference")
+        # references may be floats (one-decimal precision); parse accordingly
+        reference_list = parse_reference_list(args.reference, 3, "reference")
     except ValueError as e:
         print(f"Argument error: {e}", file=sys.stderr)
         sys.exit(2)
@@ -89,15 +109,15 @@ def main():
                 "Beat Cycle": round(beat_cycle, 1) if beat_cycle is not None else ""
             }
             for ref in reference_list:
-                n_minus, n_ref, n_plus = compute_nbeats(l, beat_cycle, ref)
-                row[f"N {ref} - 1"] = round(n_minus, 1) if n_minus is not None else ""
-                row[f"N {ref}"] = round(n_ref, 1) if n_ref is not None else ""
-                row[f"N {ref} + 1"] = round(n_plus, 1) if n_plus is not None else ""
+                n_val = compute_nbeats_single(l, beat_cycle, ref)
+                # Column name uses one-decimal formatting for the reference
+                col_name = f"N {ref:.1f}"
+                row[col_name] = round(n_val, 1) if n_val is not None else ""
             results.append(row)
 
     # Sort by N <primary reference>
     primary_ref = reference_list[0]
-    ref_key = f"N {primary_ref}"
+    ref_key = f"N {primary_ref:.1f}"
     def sort_key(r):
         try:
             v = r.get(ref_key, "")
@@ -113,7 +133,7 @@ def main():
 
     fieldnames = ["Lag (long,short)", "Beat Cycle"]
     for ref in reference_list:
-        fieldnames.extend([f"N {ref} - 1", f"N {ref}", f"N {ref} + 1"])
+        fieldnames.append(f"N {ref:.1f}")
 
     with open(out_path, "w", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -126,4 +146,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
