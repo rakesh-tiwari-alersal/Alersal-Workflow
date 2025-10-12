@@ -82,7 +82,7 @@ def main():
     parser.add_argument("-f", "--file", required=True, help="CSV filename inside historical_data/")
     parser.add_argument("-l", "--long_lags", required=True, help="Comma-separated long lags (up to 4), e.g. 237,273,291,309")
     parser.add_argument("-s", "--short_lags", required=True, help="Comma-separated short lags (up to 3), e.g. 23,27,31")
-    parser.add_argument("-r", "--reference", type=str, required=True, help="Comma-separated reference cycle(s) (up to 3) from PSD analysis; may be floats and will be rounded to 1 decimal")
+    parser.add_argument("-r", "--reference", type=str, required=True, help="Comma-separated reference cycle(s) (up to 4) from PSD analysis; may be floats and will be rounded to 1 decimal")
     args = parser.parse_args()
 
     data_path = os.path.join("historical_data", args.file)
@@ -94,7 +94,7 @@ def main():
         long_lags = parse_lag_list(args.long_lags, 4, "long_lags")
         short_lags = parse_lag_list(args.short_lags, 3, "short_lags")
         # references may be floats (one-decimal precision); parse accordingly
-        reference_list = parse_reference_list(args.reference, 3, "reference")
+        reference_list = parse_reference_list(args.reference, 4, "reference")
     except ValueError as e:
         print(f"Argument error: {e}", file=sys.stderr)
         sys.exit(2)
