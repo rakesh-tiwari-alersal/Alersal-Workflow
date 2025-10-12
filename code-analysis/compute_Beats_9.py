@@ -49,8 +49,8 @@ def parse_reference_list(s: str, max_allowed: int, name: str) -> List[float]:
             v = float(it)
         except ValueError:
             raise ValueError(f"{name} must contain numbers (optionally with one decimal).")
-        # store with one decimal precision
-        vals.append(round(v, 1))
+        # store 
+        vals.append(round(v, 2))
     return vals
 
 
@@ -82,7 +82,7 @@ def main():
     parser.add_argument("-f", "--file", required=True, help="CSV filename inside historical_data/")
     parser.add_argument("-l", "--long_lags", required=True, help="Comma-separated long lags (up to 4), e.g. 237,273,291,309")
     parser.add_argument("-s", "--short_lags", required=True, help="Comma-separated short lags (up to 3), e.g. 23,27,31")
-    parser.add_argument("-r", "--reference", type=str, required=True, help="Comma-separated reference cycle(s) (up to 4) from PSD analysis; may be floats and will be rounded to 1 decimal")
+    parser.add_argument("-r", "--reference", type=str, required=True, help="Comma-separated reference cycle(s) (may be floats with upto 2 decim)")
     args = parser.parse_args()
 
     data_path = os.path.join("historical_data", args.file)
@@ -93,8 +93,8 @@ def main():
     try:
         long_lags = parse_lag_list(args.long_lags, 4, "long_lags")
         short_lags = parse_lag_list(args.short_lags, 3, "short_lags")
-        # references may be floats (one-decimal precision); parse accordingly
-        reference_list = parse_reference_list(args.reference, 4, "reference")
+        # references may be floats (one-decimal precision); allow up to 100 references
+        reference_list = parse_reference_list(args.reference, 100, "reference")
     except ValueError as e:
         print(f"Argument error: {e}", file=sys.stderr)
         sys.exit(2)
@@ -108,11 +108,31 @@ def main():
                 "Lag (long,short)": f"{l},{s}",
                 "Beat Cycle": round(beat_cycle, 1) if beat_cycle is not None else ""
             }
+
+            # compute all N values first so we can count exact integer matches
+            n_values = []
             for ref in reference_list:
                 n_val = compute_nbeats_single(l, beat_cycle, ref)
-                # Column name uses one-decimal formatting for the reference
+                # store raw n_val (rounded to 1 decimal for parity with the original script)
+                n_values.append(round(n_val, 1) if n_val is not None else None)
+
+            # Count exact integer matches (N rounded to 1 decimal equals .0)
+            integer_count = 0
+            for n in n_values:
+                if n is None:
+                    continue
+                # check for exact .0 after rounding to 1 decimal
+                if float(n).is_integer():
+                    integer_count += 1
+
+            # Insert integer count column right after Beat Cycle (per your request)
+            row["Integer Count"] = integer_count
+
+            # Now add the individual N <ref> columns
+            for ref, n in zip(reference_list, n_values):
                 col_name = f"N {ref:.1f}"
-                row[col_name] = round(n_val, 1) if n_val is not None else ""
+                row[col_name] = n if n is not None else ""
+
             results.append(row)
 
     # Sort by N <primary reference>
@@ -131,7 +151,8 @@ def main():
     base = os.path.splitext(os.path.basename(args.file))[0]
     out_path = os.path.join("Beat_results", f"Beat_{base}_9.csv")
 
-    fieldnames = ["Lag (long,short)", "Beat Cycle"]
+    # Build fieldnames with the new Integer Count column right after Beat Cycle
+    fieldnames = ["Lag (long,short)", "Beat Cycle", "Integer Count"]
     for ref in reference_list:
         fieldnames.append(f"N {ref:.1f}")
 
@@ -146,5 +167,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
