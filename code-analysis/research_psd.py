@@ -76,8 +76,8 @@ def analyze_single_range(series, range_min, range_max):
         top_peaks['% Power'] = 0
         
     # Round values and drop Power column
-    # Keep Period as one-decimal precision (was rounded to integer previously)
-    top_peaks['Period'] = top_peaks['Period'].round(1)
+    # Keep Period as two-decimal precision (changed from 1-decimal)
+    top_peaks['Period'] = top_peaks['Period'].round(2)
     top_peaks['% Power'] = top_peaks['% Power'].round(2)
     top_peaks = top_peaks[['Period', '% Power']]  # Drop Power column
     
@@ -207,7 +207,13 @@ def main():
         # Add group1 data
         for j, df in enumerate(group1_data):
             if i < len(df):
-                row.extend([df.iloc[i]['Period'], df.iloc[i]['% Power']])
+                # Format numbers to 2 decimal places for CSV output
+                p = df.iloc[i]['Period']
+                pct = df.iloc[i]['% Power']
+                row.extend([
+                    f"{p:.2f}" if not pd.isna(p) else "",
+                    f"{pct:.2f}" if not pd.isna(pct) else ""
+                ])
             else:
                 row.extend(["", ""])
             if j < len(group1_data) - 1:
@@ -219,7 +225,13 @@ def main():
         # Add group2 data
         for j, df in enumerate(group2_data):
             if i < len(df):
-                row.extend([df.iloc[i]['Period'], df.iloc[i]['% Power']])
+                # Format numbers to 2 decimal places for CSV output
+                p = df.iloc[i]['Period']
+                pct = df.iloc[i]['% Power']
+                row.extend([
+                    f"{p:.2f}" if not pd.isna(p) else "",
+                    f"{pct:.2f}" if not pd.isna(pct) else ""
+                ])
             else:
                 row.extend(["", ""])
             if j < len(group2_data) - 1:
