@@ -1,0 +1,9 @@
+python .\compute_DTFib_wrapper_9.py -f BTC-USD.csv -s 20,23,27,31 -l 237,243,268,273,291,308,314,322
+python .\compute_DTFib_wrapper_9.py -f CLF.csv -s 17,20,23,27 -l 470,480,487,510,528,534,541
+python .\compute_DTFib_wrapper_9.py -f DX-Y.NYB.csv -s 35,36,41,45,47 -l 362,368,385,403,408,416,426
+python .\compute_DTFib_wrapper_9.py -f GCF.csv -s 41,45,47,50 -l 345,355,362,368,385,403,408
+python .\compute_DTFib_wrapper_9.py -f GSPC.csv -s 41,45,47,50 -l 470,480,487,493,510,528,534,709  
+python .\compute_DTFib_wrapper_9.py -f Roku.csv -s 17,20,21,23 -l 179,183,189,196,202,206,220
+python .\compute_DTFib_wrapper_9.py -f Uber.csv -s 20,23,25,27 -l 237,243,268,273,291,308,314  
+python .\compute_DTFib_wrapper_9.py -f XLE.csv -s 23,27,31,41,45,47 -l 385,403,408,416
+
