@@ -53,13 +53,13 @@ def main():
         "-l", "--long_lags",
         type=str,
         required=True,
-        help="Comma-separated list of long lags (up to 4), e.g. 237,273,291,309"
+        help="Comma-separated list of long lags (up to 10), e.g. 237,273,291,309"
     )
     parser.add_argument(
         "-s", "--short_lags",
         type=str,
         required=True,
-        help="Comma-separated list of short lags (up to 3), e.g. 23,27,31"
+        help="Comma-separated list of short lags (up to 10), e.g. 23,27,31"
     )
     parser.add_argument(
         "-t", "--tolerance",
@@ -77,10 +77,10 @@ def main():
         print(f"Error: data file not found: {data_file}", file=sys.stderr)
         sys.exit(2)
 
-    # Parse lag lists (allow up to 4 long lags)
+    # Parse lag lists (allow up to 10 long lags)
     try:
-        long_lags = parse_lag_list(args.long_lags, max_allowed=4, name="long_lags")
-        short_lags = parse_lag_list(args.short_lags, max_allowed=3, name="short_lags")
+        long_lags = parse_lag_list(args.long_lags, max_allowed=10, name="long_lags")
+        short_lags = parse_lag_list(args.short_lags, max_allowed=10, name="short_lags")
     except ValueError as e:
         print(f"Argument error: {e}", file=sys.stderr)
         sys.exit(2)

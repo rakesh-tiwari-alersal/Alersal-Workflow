@@ -80,8 +80,8 @@ def compute_nbeats_single(long: int, beat_cycle: Optional[float], ref: float) ->
 def main():
     parser = argparse.ArgumentParser(description="Compute beat cycles for lag combinations.")
     parser.add_argument("-f", "--file", required=True, help="CSV filename inside historical_data/")
-    parser.add_argument("-l", "--long_lags", required=True, help="Comma-separated long lags (up to 4), e.g. 237,273,291,309")
-    parser.add_argument("-s", "--short_lags", required=True, help="Comma-separated short lags (up to 3), e.g. 23,27,31")
+    parser.add_argument("-l", "--long_lags", required=True, help="Comma-separated long lags (up to 10), e.g. 237,273,291,309")
+    parser.add_argument("-s", "--short_lags", required=True, help="Comma-separated short lags (up to 10), e.g. 23,27,31")
     parser.add_argument("-r", "--reference", type=str, required=True, help="Comma-separated reference cycle(s) (may be floats with upto 2 decim)")
     args = parser.parse_args()
 
@@ -91,8 +91,8 @@ def main():
         sys.exit(2)
 
     try:
-        long_lags = parse_lag_list(args.long_lags, 4, "long_lags")
-        short_lags = parse_lag_list(args.short_lags, 3, "short_lags")
+        long_lags = parse_lag_list(args.long_lags, 10, "long_lags")
+        short_lags = parse_lag_list(args.short_lags, 10, "short_lags")
         # references may be floats (one-decimal precision); allow up to 100 references
         reference_list = parse_reference_list(args.reference, 100, "reference")
     except ValueError as e:
