@@ -1,27 +1,23 @@
 #!/usr/bin/env python3
 """
-DTFib_Beats_Top3 (tweakable)
+DTFib_Beats_Top3 (absolute-hit variant)
 
-Usage examples:
-  python compute_DTFibBeats_tweakable.py -s GSPC,BTC-USD
-  python compute_DTFibBeats_tweakable.py -c CLF
-  python compute_DTFibBeats_tweakable.py -c CLF -C --cyclic-int-weight 0.35 --cyclic-phase-weight 0.15
+Changes from original compute_DTFibBeats.py:
+- Scoring uses **Total Hits** (absolute hit count), normalized by the maximum Total Hits across candidates,
+  instead of using DTFib Hit %.
+- Removed all command-line weight override options. Scoring weights are controlled only by the
+  module-level constants near the top of the script (easy to edit in-code).
+- Cyclic-mode now uses **Phase Balance** computed directly from Peak Hits and Valley Hits
+  (a 0..1 balance where 1.0 means perfectly balanced and 0 means fully imbalanced).
+- No other behaviour changed.
 
-What changed:
-- All scoring-weights live near the top as clearly labeled variables (easy for a layman to edit).
-- You can optionally override weights from the command line with --growth-* and --cyclic-* flags.
-- Behavior otherwise mirrors the original script: it merges Beat_results/Beat_<SYM>_9.csv and
-  DTFib_results/DTFib_<SYM>_9.csv, computes scores, and writes DTFib_Beats_Results.csv.
+Usage examples (same as before):
+  python compute_DTFibBeats_abs_hits.py -s GSPC,BTC-USD
+  python compute_DTFibBeats_abs_hits.py -c CLF
 
-Scoring formulas:
-- Growth mode (default): Score = GROWTH_HIT_W * HitNorm + GROWTH_INT_W * IntNorm
-- Cyclic mode (-c): Score = CYCLIC_HIT_W * HitNorm + CYCLIC_INT_W * IntNorm + CYCLIC_PHASE_W * PhaseBalance
-
-PhaseBalance is calculated from Peak/Valley hit counts (if present in your CSVs). If not
-present, PhaseBalance defaults to 0.5 (neutral).
+Output: DTFib_Beats_Results.csv
 """
 from __future__ import annotations
-import argparse
 import csv
 import os
 import sys
@@ -30,11 +26,11 @@ from typing import List, Dict, Any, Optional
 OUT_CSV = "DTFib_Beats_Results.csv"
 
 # === Scoring weight configuration (edit these values for quick tweaks) ===
-# Growth-mode (used for growth symbols; old default behaviour)
+# Growth-mode (used for growth symbols)
 GROWTH_HIT_W: float = 0.75
 GROWTH_INT_W: float = 0.25
 
-# Cyclic-mode (used for cyclic symbols like CLF). Recommended starting point: 0.5/0.35/0.15
+# Cyclic-mode (used for cyclic symbols like CLF). Recommended starting point: 0.7/0.15/0.15
 CYCLIC_HIT_W: float = 0.70
 CYCLIC_INT_W: float = 0.15
 CYCLIC_PHASE_W: float = 0.15
@@ -135,8 +131,17 @@ def merge_rows(beat_rows: List[Dict[str, str]], dt_rows: List[Dict[str, str]]) -
 def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
     """
     Compute PhaseBalance in [0,1] from peak and valley hit counts.
-    If either is missing or both missing, return neutral 0.5.
-    Use min/max ratio; guard against zero counts.
+    Returns 1.0 when peak == valley (perfect balance), and approaches 0 when one side
+    dominates or when both are zero/missing we return neutral 0.5.
+
+    Phase balance formula used:
+        if both present and max > 0:
+            balance = min(peak, valley) / max(peak, valley)
+        else:
+            neutral 0.5
+
+    This produces a symmetric metric where 1.0 means perfectly balanced (equal peaks and valleys)
+    and values closer to 0 indicate imbalance.
     """
     if peak is None or valley is None:
         return 0.5  # neutral when no phase data available
@@ -152,32 +157,31 @@ def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
         return 0.5
 
 
-def score_and_select_top3(merged: List[Dict[str, Any]], mode: str = "growth",
-                          growth_hit_w: Optional[float] = None, growth_int_w: Optional[float] = None,
-                          cyclic_hit_w: Optional[float] = None, cyclic_int_w: Optional[float] = None,
-                          cyclic_phase_w: Optional[float] = None) -> List[Dict[str, Any]]:
+def score_and_select_top3(merged: List[Dict[str, Any]], mode: str = "growth") -> List[Dict[str, Any]]:
     """
-    Compute normalized score and return top 3 rows sorted by score desc.
-    Parameters allow overriding the global constants (useful for CLI overrides).
+    Compute normalized score using **Total Hits** (absolute hit count) and return top 3 rows sorted by score desc.
+    Uses module-level weights for growth/cyclic modes.
+    For cyclic mode the phase component is the PhaseBalance computed from Peak/Valley counts.
     """
     if not merged:
         return []
 
-    # use passed weights or fall back to module-level constants
-    g_hit = growth_hit_w if growth_hit_w is not None else GROWTH_HIT_W
-    g_int = growth_int_w if growth_int_w is not None else GROWTH_INT_W
-    c_hit = cyclic_hit_w if cyclic_hit_w is not None else CYCLIC_HIT_W
-    c_int = cyclic_int_w if cyclic_int_w is not None else CYCLIC_INT_W
-    c_phase = cyclic_phase_w if cyclic_phase_w is not None else CYCLIC_PHASE_W
+    g_hit = GROWTH_HIT_W
+    g_int = GROWTH_INT_W
+    c_hit = CYCLIC_HIT_W
+    c_int = CYCLIC_INT_W
+    c_phase = CYCLIC_PHASE_W
 
-    max_hit = max((row["DTFib Hit %"] for row in merged), default=0.0)
+    max_hits = max((row["Total Hits"] for row in merged), default=0)
     max_int = max((row["Integer Count"] for row in merged), default=0)
 
     scored: List[Dict[str, Any]] = []
     for row in merged:
-        hit_pct = float(row.get("DTFib Hit %", 0.0))
+        hit_cnt = int(row.get("Total Hits", 0))
         int_cnt = int(row.get("Integer Count", 0))
-        hit_norm = (hit_pct / max_hit) if (max_hit and max_hit > 0) else 0.0
+
+        # normalize using absolute hits (linear normalization)
+        hit_norm = (hit_cnt / max_hits) if (max_hits and max_hits > 0) else 0.0
         int_norm = (int_cnt / max_int) if (max_int and max_int > 0) else 0.0
 
         if mode == "growth":
@@ -185,10 +189,10 @@ def score_and_select_top3(merged: List[Dict[str, Any]], mode: str = "growth",
         elif mode == "cyclic":
             peak = row.get("Peak Hits")
             valley = row.get("Valley Hits")
+            # Phase balance is explicitly the balance between peak_hits and valley_hits
             phase_balance = compute_phase_balance(peak, valley)
             score = c_hit * hit_norm + c_int * int_norm + c_phase * phase_balance
         else:
-            # fallback to growth if unknown mode
             score = g_hit * hit_norm + g_int * int_norm
 
         r = dict(row)
@@ -202,29 +206,14 @@ def score_and_select_top3(merged: List[Dict[str, Any]], mode: str = "growth",
     return top3
 
 
-def parse_weight_arg(val: Optional[str], default: float) -> Optional[float]:
-    if val is None:
-        return None
-    try:
-        v = float(val)
-        return v
-    except Exception:
-        return default
-
-
 def main(argv: Optional[List[str]] = None):
+    import argparse
+
     parser = argparse.ArgumentParser(description="Select top 3 lag pairs per symbol by combining Beats and DTFib results.")
     parser.add_argument("-s", "--symbols", type=str, required=False,
                         help="Comma-separated symbols to score with growth algorithm (old 0.6/0.4). Example: -s GSPC,BTC-USD")
     parser.add_argument("-c", "--cyclic", type=str, required=False,
                         help="Comma-separated symbols to score with cyclic algorithm (0.5/0.25/0.25). Example: -c CLF,USO")
-
-    # optional overrides for weights (easy CLI tweaking)
-    parser.add_argument("--growth-hit-weight", type=str, required=False, help="Override growth hit weight (float).")
-    parser.add_argument("--growth-int-weight", type=str, required=False, help="Override growth int weight (float).")
-    parser.add_argument("--cyclic-hit-weight", type=str, required=False, help="Override cyclic hit weight (float).")
-    parser.add_argument("--cyclic-int-weight", type=str, required=False, help="Override cyclic int weight (float).")
-    parser.add_argument("--cyclic-phase-weight", type=str, required=False, help="Override cyclic phase weight (float).")
 
     args = parser.parse_args(argv)
 
@@ -249,13 +238,6 @@ def main(argv: Optional[List[str]] = None):
         print("[ERROR] No symbols provided. Use -s for growth symbols and/or -c for cyclic symbols.", file=sys.stderr)
         sys.exit(2)
 
-    # parse optional overrides
-    grow_hit_override = parse_weight_arg(args.growth_hit_weight, GROWTH_HIT_W)
-    grow_int_override = parse_weight_arg(args.growth_int_weight, GROWTH_INT_W)
-    cyclic_hit_override = parse_weight_arg(args.cyclic_hit_weight, CYCLIC_HIT_W)
-    cyclic_int_override = parse_weight_arg(args.cyclic_int_weight, CYCLIC_INT_W)
-    cyclic_phase_override = parse_weight_arg(args.cyclic_phase_weight, CYCLIC_PHASE_W)
-
     out_rows: List[Dict[str, Any]] = []
 
     for sym in symbols:
@@ -278,11 +260,6 @@ def main(argv: Optional[List[str]] = None):
         top3 = score_and_select_top3(
             merged,
             mode=mode,
-            growth_hit_w=grow_hit_override,
-            growth_int_w=grow_int_override,
-            cyclic_hit_w=cyclic_hit_override,
-            cyclic_int_w=cyclic_int_override,
-            cyclic_phase_w=cyclic_phase_override,
         )
         if not top3:
             print(f"[INFO] No candidate pairs for '{sym}'.", file=sys.stderr)
