@@ -31,12 +31,12 @@ OUT_CSV = "DTFib_Beats_Results.csv"
 
 # === Scoring weight configuration (edit these values for quick tweaks) ===
 # Growth-mode (used for growth symbols; old default behaviour)
-GROWTH_HIT_W: float = 0.6
-GROWTH_INT_W: float = 0.4
+GROWTH_HIT_W: float = 0.75
+GROWTH_INT_W: float = 0.25
 
 # Cyclic-mode (used for cyclic symbols like CLF). Recommended starting point: 0.5/0.35/0.15
-CYCLIC_HIT_W: float = 0.5
-CYCLIC_INT_W: float = 0.35
+CYCLIC_HIT_W: float = 0.70
+CYCLIC_INT_W: float = 0.15
 CYCLIC_PHASE_W: float = 0.15
 # ========================================================================
 
