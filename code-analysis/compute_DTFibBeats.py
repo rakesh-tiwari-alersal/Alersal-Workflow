@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-DTFib_Beats_Top3 (absolute-hit variant)
+DTFib_Beats_Top3 (absolute-hit normalized version)
 
 Changes from original compute_DTFibBeats.py:
 - Scoring uses **Total Hits** (absolute hit count), normalized by the maximum Total Hits across candidates,
   instead of using DTFib Hit %.
 - Removed all command-line weight override options. Scoring weights are controlled only by the
-  module-level constants near the top of the script (easy to edit in-code).
-- Cyclic-mode now uses **Phase Balance** computed directly from Peak Hits and Valley Hits
+  module-level constants near the top of the file (easy to edit in-code).
+- Cyclic-mode uses **Phase Balance** computed directly from Peak Hits and Valley Hits
   (a 0..1 balance where 1.0 means perfectly balanced and 0 means fully imbalanced).
-- No other behaviour changed.
+- No mapped hit-weight (no HIT_WEIGHT_BOTTOM/TOP). Hit contribution is purely proportional
+  to normalized Total Hits × GROWTH_HIT_W.
 
 Usage examples (same as before):
-  python compute_DTFibBeats_abs_hits.py -s GSPC,BTC-USD
-  python compute_DTFibBeats_abs_hits.py -c CLF
+  python compute_DTFibBeats.py -s GSPC,BTC-USD
+  python compute_DTFibBeats.py -c CLF
 
 Output: DTFib_Beats_Results.csv
 """
@@ -30,7 +31,7 @@ OUT_CSV = "DTFib_Beats_Results.csv"
 GROWTH_HIT_W: float = 0.75
 GROWTH_INT_W: float = 0.25
 
-# Cyclic-mode (used for cyclic symbols like CLF). Recommended starting point: 0.7/0.15/0.15
+# Cyclic-mode (used for cyclic symbols like CLF)
 CYCLIC_HIT_W: float = 0.70
 CYCLIC_INT_W: float = 0.15
 CYCLIC_PHASE_W: float = 0.15
@@ -132,19 +133,10 @@ def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
     """
     Compute PhaseBalance in [0,1] from peak and valley hit counts.
     Returns 1.0 when peak == valley (perfect balance), and approaches 0 when one side
-    dominates or when both are zero/missing we return neutral 0.5.
-
-    Phase balance formula used:
-        if both present and max > 0:
-            balance = min(peak, valley) / max(peak, valley)
-        else:
-            neutral 0.5
-
-    This produces a symmetric metric where 1.0 means perfectly balanced (equal peaks and valleys)
-    and values closer to 0 indicate imbalance.
+    dominates. If missing, returns neutral 0.5.
     """
     if peak is None or valley is None:
-        return 0.5  # neutral when no phase data available
+        return 0.5
     if peak == 0 and valley == 0:
         return 0.5
     try:
@@ -159,9 +151,8 @@ def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
 
 def score_and_select_top3(merged: List[Dict[str, Any]], mode: str = "growth") -> List[Dict[str, Any]]:
     """
-    Compute normalized score using **Total Hits** (absolute hit count) and return top 3 rows sorted by score desc.
+    Compute normalized score using Total Hits and return top 3 rows sorted by score desc.
     Uses module-level weights for growth/cyclic modes.
-    For cyclic mode the phase component is the PhaseBalance computed from Peak/Valley counts.
     """
     if not merged:
         return []
@@ -189,7 +180,6 @@ def score_and_select_top3(merged: List[Dict[str, Any]], mode: str = "growth") ->
         elif mode == "cyclic":
             peak = row.get("Peak Hits")
             valley = row.get("Valley Hits")
-            # Phase balance is explicitly the balance between peak_hits and valley_hits
             phase_balance = compute_phase_balance(peak, valley)
             score = c_hit * hit_norm + c_int * int_norm + c_phase * phase_balance
         else:
@@ -211,16 +201,15 @@ def main(argv: Optional[List[str]] = None):
 
     parser = argparse.ArgumentParser(description="Select top 3 lag pairs per symbol by combining Beats and DTFib results.")
     parser.add_argument("-s", "--symbols", type=str, required=False,
-                        help="Comma-separated symbols to score with growth algorithm (old 0.6/0.4). Example: -s GSPC,BTC-USD")
+                        help="Comma-separated symbols to score with growth algorithm. Example: -s GSPC,BTC-USD")
     parser.add_argument("-c", "--cyclic", type=str, required=False,
-                        help="Comma-separated symbols to score with cyclic algorithm (0.5/0.25/0.25). Example: -c CLF,USO")
+                        help="Comma-separated symbols to score with cyclic algorithm. Example: -c CLF,USO")
 
     args = parser.parse_args(argv)
 
     s_list = [s.strip() for s in args.symbols.split(",")] if args.symbols else []
     c_list = [s.strip() for s in args.cyclic.split(",")] if args.cyclic else []
 
-    # collect all symbols; preserve explicit mode selection per symbol
     symbols: List[str] = []
     symbol_modes: Dict[str, str] = {}
     for s in s_list:
@@ -231,11 +220,10 @@ def main(argv: Optional[List[str]] = None):
         if s:
             if s not in symbols:
                 symbols.append(s)
-            # cyclic takes precedence if provided in both
             symbol_modes[s] = "cyclic"
 
     if not symbols:
-        print("[ERROR] No symbols provided. Use -s for growth symbols and/or -c for cyclic symbols.", file=sys.stderr)
+        print("[ERROR] No symbols provided.", file=sys.stderr)
         sys.exit(2)
 
     out_rows: List[Dict[str, Any]] = []
@@ -249,22 +237,15 @@ def main(argv: Optional[List[str]] = None):
         dt_rows = read_csv_to_dict(dt_path)
 
         if not beat_rows and not dt_rows:
-            print(f"[WARN] No Beat or DTFib files found for '{sym}' (expected {beat_path} and {dt_path}). Skipping.", file=sys.stderr)
+            print(f"[WARN] No Beat or DTFib files found for '{sym}'. Skipping.")
             continue
 
         merged = merge_rows(beat_rows, dt_rows)
         if not merged:
-            print(f"[WARN] No merged rows for '{sym}' (empty merge).", file=sys.stderr)
+            print(f"[WARN] No merged rows for '{sym}'. Skipping.")
             continue
 
-        top3 = score_and_select_top3(
-            merged,
-            mode=mode,
-        )
-        if not top3:
-            print(f"[INFO] No candidate pairs for '{sym}'.", file=sys.stderr)
-            continue
-
+        top3 = score_and_select_top3(merged, mode=mode)
         for r in top3:
             out_rows.append({
                 "Symbol": sym,
@@ -276,21 +257,18 @@ def main(argv: Optional[List[str]] = None):
                 "Total Hits": int(r.get("Total Hits", 0)),
                 "Score": round(float(r.get("Score", 0.0)), 6)
             })
-
         print(f"[OK] {sym}: selected {len(top3)} top pairs (mode={mode}).")
 
-    # Write CSV
     if not out_rows:
         print("[ERROR] No results to write; exiting.", file=sys.stderr)
         sys.exit(1)
 
-    fieldnames = ["Symbol", "Rank", "Lag (long,short)", "Beat Cycle", "Integer Count",
-                  "DTFib Hit %", "Total Hits", "Score"]
+    fieldnames = ["Symbol", "Rank", "Lag (long,short)", "Beat Cycle",
+                  "Integer Count", "DTFib Hit %", "Total Hits", "Score"]
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for row in out_rows:
-            writer.writerow(row)
+        writer.writerows(out_rows)
 
     print(f"[DONE] Wrote {len(out_rows)} rows to {OUT_CSV}")
 
