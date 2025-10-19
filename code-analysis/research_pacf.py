@@ -1,11 +1,29 @@
-import pandas as pd
-import numpy as np
+#!/usr/bin/env python3
+"""
+research_pacf.py
+
+Analyze PACF peaks across multiple ranges and write results to CSV.
+
+Notes:
+- Preprocessing: log-returns of Close price.
+- Peak/significance: PACF lags exceeding approx 95% CI: |pacf| > 1.96/sqrt(n)
+- Outputs top-10 lags per range (by absolute PACF), with % contribution.
+- CLI parsing robust to PowerShell comma splitting (borrowed from research_psd.py).
+- CSV layout: two columns per range (Lag, % Contribution) with one empty column delimiter
+  between adjacent ranges/groups (matches PSD layout style).
+"""
+
 import os
+import sys
 import argparse
+from typing import List, Tuple, Optional
+
+import numpy as np
+import pandas as pd
 from statsmodels.tsa.stattools import pacf
 
-# Define analysis ranges
-RANGES = [
+# === Configuration ===
+RANGES: List[Tuple[int, int]] = [
     (15, 40),
     (30, 60),
     (50, 90),
@@ -14,197 +32,190 @@ RANGES = [
     (350, 700)
 ]
 
-def analyze_single_range(series, range_min, range_max):
-    """Analyze a single range and return results"""
-    # Calculate log returns
-    closes = series.values
-    if np.any(closes <= 0):
-        print("Error: Non-positive closing prices detected")
-        return None
-        
-    log_returns = np.log(closes[1:]) - np.log(closes[:-1])
-    
-    # Compute PACF with maximum lag set to the maximum range
-    max_lag = max(range_max for _, range_max in RANGES)
-    pacf_vals = pacf(log_returns, nlags=max_lag, method='ols')
-    
-    # Calculate 95% confidence threshold
-    n = len(log_returns)
-    ci_threshold = 1.96 / np.sqrt(n)
-    
-    # Prepare results for the specific range
-    results = []
-    for lag in range(range_min, range_max + 1):
-        if lag < len(pacf_vals):
-            pacf_val = pacf_vals[lag]
-            if abs(pacf_val) > ci_threshold:
-                results.append({
-                    'Lag': lag,
-                    'PACF': pacf_val,
-                    'Absolute PACF': abs(pacf_val)
-                })
-    
-    if not results:
-        print(f"No significant PACF values found in range {range_min}-{range_max}")
-        return None
-        
-    # Convert to DataFrame and sort by absolute value (descending)
-    results_df = pd.DataFrame(results)
-    results_df = results_df.sort_values('Absolute PACF', ascending=False)
-    
-    # Take top 10
-    top_results = results_df.head(10).copy()
-    
-    # Calculate percentage contribution based on absolute values
-    total_abs_pacf = top_results['Absolute PACF'].sum()
-    if total_abs_pacf > 0:
-        top_results['% Contribution'] = (top_results['Absolute PACF'] / total_abs_pacf) * 100
-    else:
-        top_results['% Contribution'] = 0
-        
-    # Round values
-    top_results['PACF'] = top_results['PACF'].round(4)
-    top_results['Absolute PACF'] = top_results['Absolute PACF'].round(4)
-    top_results['% Contribution'] = top_results['% Contribution'].round(2)
-    
-    return top_results[['Lag', 'PACF', '% Contribution']]
+TOP_N = 10
 
-def main():
-    parser = argparse.ArgumentParser(description='Analyze PACF for a single instrument')
-    parser.add_argument('-f', '--file', type=str, required=True, help='Input file name (e.g., GC=F.csv) located in historical_data/ folder.')
-    parser.add_argument('-r', '--range', type=str, help='Comma-separated range to analyze (e.g., 30,60)', default=None)
-    
-    args = parser.parse_args()
 
-    # Validate file path
-    file_path = os.path.join('historical_data', args.file)
+# === Analysis utilities ===
+def load_series_from_csv(file_name: str) -> Optional[pd.Series]:
+    """
+    Load price series (Close/close/Price/price) from historical_data/<file_name> and return as pandas Series.
+    Returns None on error.
+    """
+    file_path = os.path.join('historical_data', file_name)
     if not os.path.exists(file_path):
-        print(f"Error: The file '{file_path}' does not exist.")
-        return
+        print(f"File not found: {file_path}")
+        return None
 
-    # Load data
     try:
         df = pd.read_csv(file_path, index_col='Date', parse_dates=True)
-        # Check for both upper and lower case column names
-        if 'Close' in df.columns:
-            series = df['Close']
-        elif 'close' in df.columns:
-            series = df['close']
-        elif 'Price' in df.columns:
-            series = df['Price']
-        elif 'price' in df.columns:
-            series = df['price']
-        else:
-            print("Error: CSV file must contain a 'Close', 'close', 'Price', or 'price' column.")
-            return
     except Exception as e:
-        print(f"Error loading data from file: {e}")
+        print(f"Error loading CSV {file_path}: {e}")
+        return None
+
+    # Flexible column detection
+    if 'Close' in df.columns:
+        series = df['Close']
+    elif 'close' in df.columns:
+        series = df['close']
+    elif 'Price' in df.columns:
+        series = df['Price']
+    elif 'price' in df.columns:
+        series = df['price']
+    else:
+        print(f"No price-like column found in {file_path}. Expected one of: Close, close, Price, price.")
+        return None
+
+    series = series.astype(float)
+    if np.any(series <= 0):
+        print("Non-positive 'Close/Price' values found — aborting (log-returns require positive prices).")
+        return None
+
+    return series
+
+
+def compute_log_returns(series: pd.Series) -> np.ndarray:
+    """Compute log returns from price series (close_t)."""
+    prices = series.values
+    logrets = np.log(prices[1:]) - np.log(prices[:-1])
+    return logrets
+
+
+def analyze_single_range(series: pd.Series, range_min: int, range_max: int) -> Optional[List[Tuple[int, float]]]:
+    """
+    Compute PACF for the preprocessed series and return list of (lag, pacf_value)
+    for significant lags (|pacf| > 1.96/sqrt(n)), sorted by absolute pacf desc, top TOP_N.
+    """
+    x = compute_log_returns(series)
+    n = len(x)
+    if n <= 0:
+        print("Not enough data after preprocessing.")
+        return None
+
+    # Determine nlags reasonably: use range_max as the maximum lag to compute PACF
+    nlags = max(range_max, int(0.5 * n))
+    try:
+        pacf_vals = pacf(x, nlags=nlags, method='ywm')
+    except Exception:
+        pacf_vals = pacf(x, nlags=nlags)
+
+    selected = []
+    threshold = 1.96 / np.sqrt(n)  # ~95% conf bound for PACF
+    for lag in range(range_min, min(range_max, len(pacf_vals) - 1) + 1):
+        val = pacf_vals[lag]
+        if np.abs(val) > threshold:
+            selected.append((lag, float(val)))
+
+    if not selected:
+        return []
+
+    selected.sort(key=lambda t: abs(t[1]), reverse=True)
+    top = selected[:TOP_N]
+    return top
+
+
+# === CSV building utilities (PSD style layout) ===
+def make_csv_table_for_ranges(all_results: List[List[Tuple[int, float]]], ranges: List[Tuple[int, int]]) -> pd.DataFrame:
+    """
+    Build a DataFrame where each range gets two columns: 'Lag (min-max)' and '% Contribution'.
+    Insert a single empty column (separator) between ranges/groups (matching PSD style).
+    """
+    headers = []
+    for rmin, rmax in ranges:
+        headers.append(f"Lag ({rmin}-{rmax})")
+        headers.append("% Contribution")
+        headers.append("")  # blank separator column
+
+    num_rows = TOP_N
+    rows = []
+
+    abs_sums = []
+    for res in all_results:
+        abs_sums.append(sum(abs(v) for (_, v) in res) if res else 0.0)
+
+    for i in range(num_rows):
+        row = []
+        for idx, res in enumerate(all_results):
+            if i < len(res):
+                lag, val = res[i]
+                pct = (abs(val) / abs_sums[idx] * 100.0) if abs_sums[idx] > 0 else 0.0
+                row.append(str(lag))
+                row.append(f"{pct:.2f}")
+            else:
+                row += ["", ""]
+            row.append("")  # separator column
+        rows.append(row)
+
+    return pd.DataFrame(rows, columns=headers)
+
+
+# === Main ===
+def main():
+    # Borrow PSD's PowerShell-safe argv parsing
+    fixed_argv = []
+    if len(sys.argv) > 1:
+        i = 0
+        while i < len(sys.argv):
+            token = sys.argv[i]
+            if token.isdigit() and i >= 1 and sys.argv[i - 1] in ('-r', '--range'):
+                if i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit():
+                    merged = token + ',' + sys.argv[i + 1]
+                    fixed_argv.append(merged)
+                    i += 2
+                    continue
+            fixed_argv.append(token)
+            i += 1
+    else:
+        fixed_argv = sys.argv[:]
+
+    parser = argparse.ArgumentParser(description='Analyze PACF for a single instrument')
+    parser.add_argument('-f', '--file', type=str, required=True,
+                        help='CSV file name (e.g., GC=F.csv) located in historical_data/ folder.')
+    parser.add_argument('-r', '--range', type=str,
+                        help='Comma-separated range to analyze (e.g., 30,60)', default=None)
+    args = parser.parse_args(fixed_argv[1:])
+
+    series = load_series_from_csv(args.file)
+    if series is None:
         return
 
+    # --- Single range ---
     if args.range:
-        # Parse the range
         try:
             range_min, range_max = map(int, args.range.split(','))
-            print(f"Analyzing PACF range {range_min}-{range_max} for {args.file}")
-            
-            # Analyze the specific range
-            results = analyze_single_range(series, range_min, range_max)
-            
-            if results is not None:
-                print(f"\nPACF ({range_min}-{range_max})\tPACF Value\t% Contribution")
-                for _, row in results.iterrows():
-                    print(f"{row['Lag']}\t{row['PACF']}\t{row['% Contribution']}%")
+        except Exception:
+            print("Invalid -r/--range format. Provide as 'min,max' (e.g., 30,60).")
             return
-        except ValueError:
-            print("Error: Range format should be like '30,60'")
-            return
-    
-    # Analyze all ranges
-    all_results = {}
-    
-    for range_min, range_max in RANGES:
+
+        print(f"Analyzing PACF range {range_min}-{range_max} for {args.file} ...")
         results = analyze_single_range(series, range_min, range_max)
-        if results is not None:
-            all_results[f"{range_min}-{range_max}"] = results
-    
-    if not all_results:
-        print("No significant PACF values found in any range")
+        if results is None:
+            print("Analysis failed.")
+            return
+        if not results:
+            print("No significant PACF lags found in that range.")
+            return
+
+        total_abs = sum(abs(v) for (_, v) in results)
+        print(f"\nPACF ({range_min}-{range_max})\tPACF Value\t% Contribution")
+        for lag, val in results:
+            pct = (abs(val) / total_abs * 100.0) if total_abs > 0 else 0.0
+            print(f"{lag}\t{val:.4f}\t{pct:.2f}")
         return
-    
-    # Prepare output for CSV
-    output_rows = []
-    
-    # First group: 15-40, 30-60, 50-90
-    group1_ranges = ["15-40", "30-60", "50-90"]
-    group1_data = []
-    
-    for range_name in group1_ranges:
-        if range_name in all_results:
-            group1_data.append(all_results[range_name])
-        else:
-            group1_data.append(pd.DataFrame(columns=['Lag', 'PACF', '% Contribution']))
-    
-    # Second group: 150-350, 200-500, 350-700
-    group2_ranges = ["150-350", "200-500", "350-700"]
-    group2_data = []
-    
-    for range_name in group2_ranges:
-        if range_name in all_results:
-            group2_data.append(all_results[range_name])
-        else:
-            group2_data.append(pd.DataFrame(columns=['Lag', 'PACF', '% Contribution']))
-    
-    # Find maximum rows needed
-    max_rows = max(
-        max(len(df) for df in group1_data),
-        max(len(df) for df in group2_data)
-    )
-    
-    # Add headers
-    header_row = []
-    for range_name in group1_ranges:
-        header_row.extend([f"PACF ({range_name})", "PACF Value", "% Contribution"])
-    
-    # Add two empty columns
-    header_row.extend(["", "", ""])
-    
-    for range_name in group2_ranges:
-        header_row.extend([f"PACF ({range_name})", "PACF Value", "% Contribution"])
-    
-    output_rows.append(header_row)
-    
-    # Add data rows
-    for i in range(max_rows):
-        row = []
-        
-        # Add group1 data
-        for df in group1_data:
-            if i < len(df):
-                row.extend([df.iloc[i]['Lag'], df.iloc[i]['PACF'], df.iloc[i]['% Contribution']])
-            else:
-                row.extend(["", "", ""])
-        
-        # Add two empty columns
-        row.extend(["", "", ""])
-        
-        # Add group2 data
-        for df in group2_data:
-            if i < len(df):
-                row.extend([df.iloc[i]['Lag'], df.iloc[i]['PACF'], df.iloc[i]['% Contribution']])
-            else:
-                row.extend(["", "", ""])
-        
-        output_rows.append(row)
-    
-    # Create output directory if it doesn't exist
+
+    # --- All ranges ---
+    all_results = []
+    for rmin, rmax in RANGES:
+        res = analyze_single_range(series, rmin, rmax)
+        all_results.append(res if res is not None else [])
+
+    output_df = make_csv_table_for_ranges(all_results, RANGES)
+
     os.makedirs('research_output', exist_ok=True)
-    
-    # Create DataFrame and save to CSV
-    output_df = pd.DataFrame(output_rows)
-    file_name = os.path.splitext(args.file)[0]
-    output_file = f"research_output/research_pacf_{file_name}.csv"
-    output_df.to_csv(output_file, index=False, header=False)
+    file_base = os.path.splitext(args.file)[0]
+    output_file = os.path.join('research_output', f"research_pacf_{file_base}.csv")
+    output_df.to_csv(output_file, index=False)
     print(f"Results saved to {output_file}")
+
 
 if __name__ == "__main__":
     main()
