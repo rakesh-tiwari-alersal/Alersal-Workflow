@@ -76,12 +76,56 @@ def analyze_single_range(series, range_min, range_max):
         top_peaks['% Power'] = 0
         
     # Round values and drop Power column
-    # Keep Period as two-decimal precision (changed from 1-decimal)
+    # Keep Period as two-decimal precision
     top_peaks['Period'] = top_peaks['Period'].round(2)
     top_peaks['% Power'] = top_peaks['% Power'].round(2)
     top_peaks = top_peaks[['Period', '% Power']]  # Drop Power column
     
     return top_peaks
+
+def append_psd_all_file(file_base, group2_data, clear_flag=False):
+    """
+    Append a single-row summary to research_output/research_psd_ALL.csv.
+    Row format: file_base,period1,period2,...
+    period1.. are unique Period values from group2_data (last 3 ranges), duplicates removed,
+    sorted descending, formatted with two decimals.
+    If clear_flag True, truncate (overwrite) the ALL file first.
+    """
+    outdir = 'research_output'
+    os.makedirs(outdir, exist_ok=True)
+    all_file = os.path.join(outdir, 'research_psd_ALL.csv')
+
+    # Collect Periods from the three group2_data DataFrames
+    periods = []
+    for df in group2_data:
+        if df is None or df.empty:
+            continue
+        # df['Period'] is rounded to 2 decimals already
+        vals = df['Period'].dropna().tolist()
+        periods.extend(vals)
+
+    # Remove duplicates, convert to floats, sort descending
+    unique_periods = sorted({float(p) for p in periods}, reverse=True)
+
+    # Format with two decimals
+    formatted_periods = [f"{p:.2f}" for p in unique_periods]
+
+    # Prepare row: start with file_base
+    row = [file_base] + formatted_periods
+
+    # If clear flag: truncate file (write headerless empty file)
+    mode = 'a'
+    if clear_flag:
+        # overwrite/truncate
+        with open(all_file, 'w', newline='') as fh:
+            pass
+        mode = 'a'
+
+    # Append CSV row (no header)
+    with open(all_file, mode, newline='') as fh:
+        import csv
+        writer = csv.writer(fh)
+        writer.writerow(row)
 
 def main():
     # Handle PowerShell's argument parsing issue with commas
@@ -99,6 +143,7 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze PSD cycles for a single instrument')
     parser.add_argument('-f', '--file', type=str, required=True, help='Input file name (e.g., GC=F.csv) located in historical_data/ folder.')
     parser.add_argument('-r', '--range', type=str, help='Comma-separated range to analyze (e.g., 30,60)', default=None)
+    parser.add_argument('-c', '--clear-summary', action='store_true', help='If provided, clear research_psd_ALL.csv before appending.')
     
     args = parser.parse_args(fixed_argv[1:])
 
@@ -248,6 +293,9 @@ def main():
     output_file = f"research_output/research_psd_{file_name}.csv"
     output_df.to_csv(output_file, index=False, header=False)
     print(f"Results saved to {output_file}")
+
+    # Append the "ALL" file (last three ranges -> group2_data)
+    append_psd_all_file(file_name, group2_data, clear_flag=args.clear_summary)
 
 if __name__ == "__main__":
     main()

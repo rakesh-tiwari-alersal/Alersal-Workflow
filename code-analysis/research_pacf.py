@@ -6,7 +6,7 @@ Analyze PACF peaks across multiple ranges and write results to CSV.
 
 Notes:
 - Preprocessing: log-returns of Close price.
-- Peak/significance: PACF lags exceeding approx 95% CI: |pacf| > 1.96/sqrt(n)
+- Peak/significance: PACF lags exceeding approx 99% CI: |pacf| > 2.5758/sqrt(n)
 - Outputs top-10 lags per range (by absolute PACF), with % contribution.
 - CLI parsing robust to PowerShell comma splitting (borrowed from research_psd.py).
 - CSV layout: two columns per range (Lag, % Contribution) with one empty column delimiter
@@ -83,7 +83,7 @@ def compute_log_returns(series: pd.Series) -> np.ndarray:
 def analyze_single_range(series: pd.Series, range_min: int, range_max: int) -> Optional[List[Tuple[int, float]]]:
     """
     Compute PACF for the preprocessed series and return list of (lag, pacf_value)
-    for significant lags (|pacf| > 1.96/sqrt(n)), sorted by absolute pacf desc, top TOP_N.
+    for significant lags (|pacf| > 2.5758/sqrt(n)), sorted by absolute pacf desc, top TOP_N.
     """
     x = compute_log_returns(series)
     n = len(x)
@@ -99,7 +99,7 @@ def analyze_single_range(series: pd.Series, range_min: int, range_max: int) -> O
         pacf_vals = pacf(x, nlags=nlags)
 
     selected = []
-    threshold = 1.96 / np.sqrt(n)  # ~95% conf bound for PACF
+    threshold = 2.5758 / np.sqrt(n)  # ~99% conf bound for PACF
     for lag in range(range_min, min(range_max, len(pacf_vals) - 1) + 1):
         val = pacf_vals[lag]
         if np.abs(val) > threshold:
@@ -147,6 +147,46 @@ def make_csv_table_for_ranges(all_results: List[List[Tuple[int, float]]], ranges
 
     return pd.DataFrame(rows, columns=headers)
 
+def append_pacf_all_file(file_base, group2_results, clear_flag=False):
+    """
+    Append a single-row summary to research_output/research_pacf_ALL.csv.
+    Row format: file_base,lag1,lag2,...
+    lag1.. are unique lag values from group2_results (last 3 ranges), duplicates removed,
+    sorted descending (integers).
+    If clear_flag True, truncate (overwrite) the ALL file first.
+    """
+    outdir = 'research_output'
+    os.makedirs(outdir, exist_ok=True)
+    all_file = os.path.join(outdir, 'research_pacf_ALL.csv')
+
+    # Collect lags from the three group2_results lists
+    lags = []
+    for res in group2_results:
+        if not res:
+            continue
+        for lag, _ in res:
+            lags.append(int(lag))
+
+    # Remove duplicates and sort descending
+    unique_lags = sorted({int(x) for x in lags}, reverse=True)
+
+    # Prepare row: start with file_base
+    row = [file_base] + [str(x) for x in unique_lags]
+
+    # If clear flag: truncate file (write headerless empty file)
+    mode = 'a'
+    if clear_flag:
+        # overwrite/truncate
+        with open(all_file, 'w', newline='') as fh:
+            pass
+        mode = 'a'
+
+    # Append CSV row (no header)
+    with open(all_file, mode, newline='') as fh:
+        import csv
+        writer = csv.writer(fh)
+        writer.writerow(row)
+
 
 # === Main ===
 def main():
@@ -172,6 +212,7 @@ def main():
                         help='CSV file name (e.g., GC=F.csv) located in historical_data/ folder.')
     parser.add_argument('-r', '--range', type=str,
                         help='Comma-separated range to analyze (e.g., 30,60)', default=None)
+    parser.add_argument('-c', '--clear-summary', action='store_true', help='If provided, clear research_pacf_ALL.csv before appending.')
     args = parser.parse_args(fixed_argv[1:])
 
     series = load_series_from_csv(args.file)
@@ -216,6 +257,9 @@ def main():
     output_df.to_csv(output_file, index=False)
     print(f"Results saved to {output_file}")
 
+    # Append the "ALL" file (last three ranges -> group2_results)
+    group2_results = [all_results[3], all_results[4], all_results[5]]  # 150-350,200-500,350-700
+    append_pacf_all_file(file_base, group2_results, clear_flag=args.clear_summary)
 
 if __name__ == "__main__":
     main()
