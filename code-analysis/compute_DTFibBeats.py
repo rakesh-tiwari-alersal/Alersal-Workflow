@@ -230,8 +230,8 @@ def main(argv: Optional[List[str]] = None):
 
     for sym in symbols:
         mode = symbol_modes.get(sym, "growth")
-        beat_path = os.path.join("Beat_results", f"Beat_{sym}_9.csv")
-        dt_path = os.path.join("DTFib_results", f"DTFib_{sym}_9.csv")
+        beat_path = os.path.join("Beat_results", f"Beat_{sym}_N.csv")
+        dt_path = os.path.join("DTFib_results", f"DTFib_{sym}_N.csv")
 
         beat_rows = read_csv_to_dict(beat_path)
         dt_rows = read_csv_to_dict(dt_path)

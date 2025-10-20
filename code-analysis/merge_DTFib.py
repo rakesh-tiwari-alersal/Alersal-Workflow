@@ -2,7 +2,7 @@
 """
 merge_dtfib_runs.py
 
-Merge DTFib_results/DTFib_<SYM>_9.csv across multiple run directories.
+Merge DTFib_results/DTFib_<SYM>_N.csv across multiple run directories.
 
 Usage:
   python merge_dtfib_runs.py -d run1,run2[,run3] -s BTC-USD,GSPC -o merged_out
@@ -57,7 +57,7 @@ def write_csv(path: str, fieldnames: List[str], rows: List[Dict[str, object]]) -
 
 
 def merge_for_symbol(sym: str, input_dirs: List[str], out_dir: str) -> None:
-    filename = f"DTFib_{sym}_9.csv"
+    filename = f"DTFib_{sym}_N.csv"
     input_paths = [os.path.join(d, "DTFib_results", filename) for d in input_dirs]
 
     # Aggregation map: lag -> aggregated counters

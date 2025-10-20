@@ -2,7 +2,7 @@
 """
 merge_beats_runs.py
 
-Merge Beat_results/Beat_<SYM>_9.csv across multiple run directories.
+Merge Beat_results/Beat_<SYM>_N.csv across multiple run directories.
 
 Usage:
   python merge_beats_runs.py -d run1,run2[,run3] -s BTC-USD,GSPC -o merged_out
@@ -52,7 +52,7 @@ def write_csv(path: str, fieldnames: List[str], rows: List[Dict[str, object]]) -
 
 
 def merge_for_symbol(sym: str, input_dirs: List[str], out_dir: str) -> None:
-    filename = f"Beat_{sym}_9.csv"
+    filename = f"Beat_{sym}_N.csv"
     input_paths = [os.path.join(d, "Beat_results", filename) for d in input_dirs]
 
     agg: Dict[str, Dict[str, object]] = {}
