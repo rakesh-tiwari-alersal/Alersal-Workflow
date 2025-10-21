@@ -138,9 +138,9 @@ def merge_for_symbol(sym: str, input_dirs: List[str], out_dir: str) -> None:
             hit_pct = (total_hits / confirmed_total) * 100.0
 
         pvs = ""
-        if cv > 0:
+        if vh > 0:
             try:
-                pvs = f"{(cp / cv):.2f}"
+                pvs = f"{(ph / vh):.2f}"
             except Exception:
                 pvs = ""
 
