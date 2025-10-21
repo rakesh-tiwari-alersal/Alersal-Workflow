@@ -11,6 +11,7 @@ Behavior:
  - When writing CSV, displayed values are rounded to 1 decimal using ROUND_HALF_UP.
  - Integer Count is computed after rounding each 2-decimal N to 1 decimal with ROUND_HALF_UP.
  - Long lags are selected automatically as all values within ±54 of the base (-b) cycle.
+ - Results are now sorted by Integer Count (descending).
 """
 
 import argparse
@@ -195,18 +196,8 @@ def main():
 
             results.append(row)
 
-    # Sort results
-    primary_label = n_header_labels[0]
-    primary_col = f"N {primary_label}"
-
-    def sort_key(r):
-        try:
-            v = r.get(primary_col, "")
-            return float(v) if v != "" else float("inf")
-        except Exception:
-            return float("inf")
-
-    results.sort(key=sort_key)
+    # === Changed section: sort results by Integer Count (descending) ===
+    results.sort(key=lambda r: r.get("Integer Count", 0), reverse=True)
 
     os.makedirs("Beat_results", exist_ok=True)
     base = os.path.splitext(os.path.basename(args.file))[0]
