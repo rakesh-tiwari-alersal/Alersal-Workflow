@@ -7,6 +7,11 @@ DTFib_Beats_Top3 - adjusted output & reporting
 - Removed Beat Cycle from the CSV output.
 - For each symbol, prints the number of selected top pairs and the ignored Integer Count cutoff:
   [OK] GSPC: selected 3 top pairs (mode=growth), ignored Integer Count X and below.
+
+Change added in this version:
+- The row with the highest Total Hits (as seen in the merged DTFib rows) is always
+  forced into the Top-3 and is placed at Rank 1 (hard rule). The other two ranks
+  are selected by the existing rules unchanged.
 """
 from __future__ import annotations
 import csv
@@ -17,11 +22,11 @@ from typing import List, Dict, Any, Optional, Tuple
 OUT_CSV = "DTFib_Beats_Results.csv"
 
 # === Scoring weights ===
-GROWTH_HIT_W: float = 0.90
-GROWTH_PHASE_W: float = 0.10
+GROWTH_HIT_W: float = 0.80
+GROWTH_PHASE_W: float = 0.20
 
-CYCLIC_HIT_W: float = 0.85
-CYCLIC_PHASE_W: float = 0.15
+CYCLIC_HIT_W: float = 0.80
+CYCLIC_PHASE_W: float = 0.20
 # ========================
 
 
@@ -145,19 +150,45 @@ def filter_by_integer_count_qualitative(merged: List[Dict[str, Any]]) -> Tuple[L
     threshold_idx = ((n + 1) // 2) - 1  # e.g., n=5 => threshold_idx=2 (0-based), keeps ceil(n/2) items or more if ties
     cutoff_value = int(sorted_merged[threshold_idx].get("Integer Count", 0))
 
-    # include all rows with Integer Count >= cutoff_value
+    # include all rows with Integer Count > cutoff_value
     filtered = [r for r in sorted_merged if int(r.get("Integer Count", 0)) > cutoff_value]
     return filtered, cutoff_value
 
 
 def score_and_select_top3(merged: List[Dict[str, Any]], mode: str = "growth") -> Tuple[List[Dict[str, Any]], Optional[int]]:
-    """Compute normalized score using hits and phase balance. Returns (top3_list, cutoff_value)."""
+    """Compute normalized score using hits and phase balance. Returns (top3_list, cutoff_value).
+
+    New behavior: The single merged row with the maximum Total Hits is always included
+    and forced into Rank 1 (hard rule). The other two ranks are selected by the usual scoring.
+    """
     if not merged:
         return [], None
 
+    # find the merged row that has the highest Total Hits (tie-breaker: first encountered)
+    top_hit_row_key = None
+    max_hits_val = -1
+    for r in merged:
+        th = int(r.get("Total Hits", 0))
+        if th > max_hits_val:
+            max_hits_val = th
+            top_hit_row_key = r.get("Lag (long,short)")
+
+    # apply the qualitative Integer Count filter as before
     filtered, cutoff_value = filter_by_integer_count_qualitative(merged)
     if not filtered:
-        return [], cutoff_value
+        # If filtering produced empty, ensure top_hit_row is included (fallback)
+        # find the top row in merged and include it
+        top_row = next((r for r in merged if r.get("Lag (long,short)") == top_hit_row_key), None)
+        if top_row is not None:
+            filtered = [top_row]
+        else:
+            return [], cutoff_value
+
+    # If the top-hit row was excluded by the filter, add it back (preserve unique by Lag key)
+    if top_hit_row_key is not None and not any(r.get("Lag (long,short)") == top_hit_row_key for r in filtered):
+        top_row = next((r for r in merged if r.get("Lag (long,short)") == top_hit_row_key), None)
+        if top_row is not None:
+            filtered.append(top_row)
 
     if mode == "growth":
         hit_w, phase_w = GROWTH_HIT_W, GROWTH_PHASE_W
@@ -179,7 +210,18 @@ def score_and_select_top3(merged: List[Dict[str, Any]], mode: str = "growth") ->
         r["Score"] = score
         scored.append(r)
 
+    # sort by score descending
     scored.sort(key=lambda x: x["Score"], reverse=True)
+
+    # Ensure top-hit row is Rank 1: if present in scored, move it to front
+    if top_hit_row_key is not None:
+        for i, r in enumerate(scored):
+            if r.get("Lag (long,short)") == top_hit_row_key:
+                top_r = scored.pop(i)
+                scored.insert(0, top_r)
+                break
+
+    # pick top 3 (if fewer available, return what's there)
     top3 = scored[:3]
     for i, r in enumerate(top3, start=1):
         r["Rank"] = i
@@ -193,7 +235,7 @@ def main(argv: Optional[List[str]] = None):
     parser.add_argument("-s", "--symbols", type=str, required=False,
                         help="Comma-separated symbols for growth mode. Example: -s GSPC,BTC-USD")
     parser.add_argument("-c", "--cyclic", type=str, required=False,
-                        help="Comma-separated symbols for cyclic mode. Example: -c CLF,USO")
+                        help="Comma-separated symbols to score with cyclic algorithm. Example: -c CLF,USO")
 
     args = parser.parse_args(argv)
 
