@@ -55,12 +55,12 @@ def main():
         required=True,
         help="Base cycle (integer). Only cycles in range BASE±54 will be used."
     )
-    parser.add_argument(
-        "-s", "--short_lags",
-        type=str,
-        required=True,
-        help="Comma-separated list of short lags (up to 10), e.g. 23,27,31"
-    )
+    # Removed -s/--short_lags; replaced with vol flags:
+    vol_group = parser.add_mutually_exclusive_group(required=True)
+    vol_group.add_argument("-vh", "--vol-high", action="store_true",
+                           help="High volatility preset short-lags (17,20,23,25,27)")
+    vol_group.add_argument("-vl", "--vol-low", action="store_true",
+                           help="Low volatility preset short-lags (27,31,36,41,47)")
     parser.add_argument(
         "-t", "--tolerance",
         type=float,
@@ -77,11 +77,14 @@ def main():
         print(f"Error: data file not found: {data_file}", file=sys.stderr)
         sys.exit(2)
 
-    # Parse short lag list (allow up to 10 short lags)
-    try:
-        short_lags = parse_lag_list(args.short_lags, max_allowed=10, name="short_lags")
-    except ValueError as e:
-        print(f"Argument error: {e}", file=sys.stderr)
+    # Determine short_lags based on volatility flag
+    if args.vol_high:
+        short_lags = [17, 20, 23, 25, 27]
+    elif args.vol_low:
+        short_lags = [27, 31, 36, 41, 47]
+    else:
+        # Should not happen because group is required, but guard anyway
+        print("Error: must specify either -vh/--vol-high or -vl/--vol-low", file=sys.stderr)
         sys.exit(2)
 
     # Full long-term lags table (from Table 2) — same as in compute_DTFib_wrapper.py
@@ -104,6 +107,7 @@ def main():
         sys.exit(1)
 
     print(f"Using base cycle {args.base}. Long-term cycles in range: {long_lags}")
+    print(f"Using short cycles (volatility preset): {short_lags}")
 
     results = []
 

@@ -3,7 +3,7 @@
 compute_Beats_N.py
 
 Usage example:
-  python compute_Beats_N.py -f GSPC.csv -r 501.6,372.1,607.2 -s 41,45 -b 470
+  python compute_Beats_N.py -f GSPC.csv -r 501.6,372.1,607.2 -vh -b 470
 
 Behavior:
  - -r/--reference accepts floats with up to 2 decimal places (validated).
@@ -11,7 +11,11 @@ Behavior:
  - When writing CSV, displayed values are rounded to 1 decimal using ROUND_HALF_UP.
  - Integer Count is computed after rounding each 2-decimal N to 1 decimal with ROUND_HALF_UP.
  - Long lags are selected automatically as all values within ±54 of the base (-b) cycle.
- - Results are now sorted by Integer Count (descending).
+ - Results are sorted by Integer Count (descending).
+ - Short lag list is selected using one of:
+     -vh / --vol-high  -> high volatility short cycle list: 17,20,23,25,27
+     -vl / --vol-low   -> low volatility short cycle list:  27,31,36,41,47
+   Exactly one of -vh or -vl must be provided.
 """
 
 import argparse
@@ -123,8 +127,12 @@ def main():
     parser.add_argument("-f", "--file", required=True, help="CSV filename inside historical_data/")
     parser.add_argument("-b", "--base", type=int, required=True,
                         help="Base cycle (integer). Only cycles in range BASE±54 will be used.")
-    parser.add_argument("-s", "--short_lags", required=True,
-                        help="Comma-separated short lags (up to 10), e.g. 23,27,31")
+    # Removed -s/--short_lags; replaced with vol flags:
+    vol_group = parser.add_mutually_exclusive_group(required=True)
+    vol_group.add_argument("-vh", "--vol-high", action="store_true",
+                           help="High volatility preset short-lags (17,20,23,25,27)")
+    vol_group.add_argument("-vl", "--vol-low", action="store_true",
+                           help="Low volatility preset short-lags (27,31,36,41,47)")
     parser.add_argument("-r", "--reference", type=str, required=True,
                         help="Comma-separated reference cycle(s) (may be floats with up to 2 decimals)")
     args = parser.parse_args()
@@ -134,9 +142,18 @@ def main():
         print(f"Error: data file not found: {data_path}", file=sys.stderr)
         sys.exit(2)
 
-    # Parse inputs
+    # Determine short_lags based on volatility flag
+    if args.vol_high:
+        short_lags = [17, 20, 23, 25, 27]
+    elif args.vol_low:
+        short_lags = [27, 31, 36, 41, 47]
+    else:
+        # Should not happen because group is required, but guard anyway
+        print("Error: must specify either -vh/--vol-high or -vl/--vol-low", file=sys.stderr)
+        sys.exit(2)
+
+    # Parse reference list
     try:
-        short_lags = parse_lag_list(args.short_lags, 10, "short_lags")
         reference_list = parse_reference_list(args.reference, 100, "reference")
     except ValueError as e:
         print(f"Argument error: {e}", file=sys.stderr)
@@ -160,6 +177,7 @@ def main():
         sys.exit(1)
 
     print(f"Using base cycle {args.base}. Long-term cycles in range: {long_lags}")
+    print(f"Using short cycles (volatility preset): {short_lags}")
 
     results = []
 
