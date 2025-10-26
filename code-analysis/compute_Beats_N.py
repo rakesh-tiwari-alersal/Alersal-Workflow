@@ -14,7 +14,7 @@ Behavior:
  - Results are sorted by Integer Count (descending).
  - Short lag list is selected using one of:
      -vh / --vol-high  -> high volatility short cycle list: 17,20,23,25,27
-     -vl / --vol-low   -> low volatility short cycle list:  27,31,36,41,47
+     -vl / --vol-low   -> low volatility short cycle list:  31,36,41,47
    Exactly one of -vh or -vl must be provided.
 """
 
@@ -132,7 +132,7 @@ def main():
     vol_group.add_argument("-vh", "--vol-high", action="store_true",
                            help="High volatility preset short-lags (17,20,23,25,27)")
     vol_group.add_argument("-vl", "--vol-low", action="store_true",
-                           help="Low volatility preset short-lags (27,31,36,41,47)")
+                           help="Low volatility preset short-lags (31,36,41,47)")
     parser.add_argument("-r", "--reference", type=str, required=True,
                         help="Comma-separated reference cycle(s) (may be floats with up to 2 decimals)")
     args = parser.parse_args()
@@ -146,7 +146,7 @@ def main():
     if args.vol_high:
         short_lags = [17, 20, 23, 25, 27]
     elif args.vol_low:
-        short_lags = [27, 31, 36, 41, 47]
+        short_lags = [31, 36, 41, 47]
     else:
         # Should not happen because group is required, but guard anyway
         print("Error: must specify either -vh/--vol-high or -vl/--vol-low", file=sys.stderr)

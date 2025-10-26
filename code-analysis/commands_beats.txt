@@ -1,15 +1,15 @@
-python .\compute_Beats_N.py -f BTC-USD.csv -s 20,23,27,31 -b 291 -r 367.18,288.50,224.39,201.95,175.61
+python .\compute_Beats_N.py -f BTC-USD.csv -vh -b 291 -r 367.18,288.50,224.39,201.95,175.61
 
-python .\compute_Beats_N.py -f CLF.csv -s 17,20,23,27 -b 510 -r 525.58,420.47,350.39,315.35,252.28,217.48,191.12,180.20,157.67
+python .\compute_Beats_N.py -f CLF.csv -vh -b 510 -r 525.58,420.47,350.39,315.35,252.28,217.48,191.12,180.20,157.67
 
-python .\compute_Beats_N.py -f DX-Y.NYB.csv -s 35,36,41,45,47 -b 385 -r 613.95,555.48,402.24,376.29,343.09,299.10,277.74,265.11,253.59,243.02,233.30,208.30,201.12,188.15,171.54
+python .\compute_Beats_N.py -f DX-Y.NYB.csv -vl -b 385 -r 613.95,555.48,402.24,376.29,343.09,299.10,277.74,265.11,253.59,243.02,233.30,208.30,201.12,188.15,171.54
 
-python .\compute_Beats_N.py -f GCF.csv -s 41,45,47 -b 385 -r 524.92,419.93,314.95,286.32,233.30,209.97,185.26,165.76
+python .\compute_Beats_N.py -f GCF.csv -vl -b 385 -r 524.92,419.93,314.95,286.32,233.30,209.97,185.26,165.76
 
-python .\compute_Beats_N.py -f GSPC.csv -s 41,45,47,50 -b 510 -r 607.16,501.57,372.13,329.60,288.40,268.28,250.78,230.72,217.66,195.53,180.25,172.18,164.80,160.22
+python .\compute_Beats_N.py -f GSPC.csv -vl -b 510 -r 607.16,501.57,372.13,329.60,288.40,268.28,250.78,230.72,217.66,195.53,180.25,172.18,164.80,160.22
 
-python .\compute_Beats_N.py -f Roku.csv -s 17,20,23 -b 220 -r 183.36
+python .\compute_Beats_N.py -f Roku.csv -vh -b 220 -r 183.36
 
-python .\compute_Beats_N.py -f Uber.csv -s 20,23,25,27 -b 291 -r 268.67,179.11
+python .\compute_Beats_N.py -f Uber.csv -vh -b 291 -r 268.67,179.11
 
-python .\compute_Beats_N.py -f XLE.csv -s 23,27,31 -b 385 -r 561.58,421.19,354.68,293.00,249.59,217.39,192.54,182.14,168.48
+python .\compute_Beats_N.py -f XLE.csv -vl -b 385 -r 561.58,421.19,354.68,293.00,249.59,217.39,192.54,182.14,168.48
