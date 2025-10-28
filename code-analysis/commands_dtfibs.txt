@@ -1,8 +1,8 @@
-python .\compute_DTFib_N.py -f BTC-USD.csv -vh -b 291
-python .\compute_DTFib_N.py -f CLF.csv -vh -b 510
-python .\compute_DTFib_N.py -f DX-Y.NYB.csv -vl -b 385
-python .\compute_DTFib_N.py -f GCF.csv  -vl -b 385
-python .\compute_DTFib_N.py -f GSPC.csv  -vl -b 510
-python .\compute_DTFib_N.py -f Roku.csv -vh -b 220
-python .\compute_DTFib_N.py -f Uber.csv -vh -b 291
-python .\compute_DTFib_N.py -f XLE.csv -vl -b 385
+python .\compute_DTFib_N.py -f BTC-USD.csv -vh
+python .\compute_DTFib_N.py -f CLF.csv -vh 
+python .\compute_DTFib_N.py -f DX-Y.NYB.csv -vl
+python .\compute_DTFib_N.py -f GCF.csv  -vl
+python .\compute_DTFib_N.py -f GSPC.csv  -vl
+python .\compute_DTFib_N.py -f Roku.csv -vh
+python .\compute_DTFib_N.py -f Uber.csv -vh
+python .\compute_DTFib_N.py -f XLE.csv -vl
