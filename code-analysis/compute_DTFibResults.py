@@ -4,10 +4,13 @@ DTFib-only selection script
 
 This version:
 - Uses only DTFib results (DTFib_results/DTFib_<sym>_N.csv).
-- Removes Integer Count and Beat Cycle (those fields are not used or expected).
 - Keeps phase-balance scoring (searches for Peak/Valley keys in DTFib CSV).
 - Keeps -ma / --min-average filtering on the long lag (default 200).
 - Selects the top 5 candidates by score (normalized Total Hits + phase balance).
+- Adds "Beat Cycle" column immediately after "Lag (long,short)".
+- Optional -p / --psd-peak <value> to compute "PSD Alignment" per row using nearest beat harmonic:
+      x = round((PSD - long) / beat)
+      PSD Alignment = abs(PSD - (long + x * beat))
 """
 from __future__ import annotations
 import csv
@@ -62,10 +65,7 @@ def parse_int(x: Optional[str]) -> Optional[int]:
 
 
 def _find_phase_keys(row: Dict[str, str]) -> Dict[str, Optional[int]]:
-    """
-    Look for common variants of peak/valley hit column names and return parsed ints
-    as {'peak': int or None, 'valley': int or None}
-    """
+    """Find peak/valley hit columns."""
     possible_peak_keys = ["Peak Hits", "PeakHits", "Peak_Hits", "Peaks"]
     possible_valley_keys = ["Valley Hits", "ValleyHits", "Valley_Hits", "Valleys"]
     peak = None
@@ -81,11 +81,21 @@ def _find_phase_keys(row: Dict[str, str]) -> Dict[str, Optional[int]]:
     return {"peak": peak, "valley": valley}
 
 
+def compute_beat_cycle(lag_str: str) -> Optional[float]:
+    """Compute beat cycle given 'Lag (long,short)'."""
+    if not lag_str or "," not in lag_str:
+        return None
+    try:
+        long_lag, short_lag = [float(x.strip()) for x in lag_str.split(",")]
+        if long_lag <= 0 or short_lag <= 0 or long_lag == short_lag:
+            return None
+        return 1.0 / abs((1.0 / long_lag) - (1.0 / short_lag))
+    except Exception:
+        return None
+
+
 def build_rows_from_dtfib(dt_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-    """
-    Construct rows entirely from DTFib CSV rows.
-    Expects 'Lag (long,short)' and DTFib fields such as 'Total Hits', 'Hit %', and possible peak/valley columns.
-    """
+    """Build rows entirely from DTFib CSV."""
     results: List[Dict[str, Any]] = []
     for d in dt_rows:
         k = d.get("Lag (long,short)")
@@ -93,17 +103,19 @@ def build_rows_from_dtfib(dt_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]
             continue
         hit_pct = parse_float(d.get("Hit %"))
         total_hits = parse_int(d.get("Total Hits"))
-
         p_d = _find_phase_keys(d)
         peak_hits = p_d.get("peak")
         valley_hits = p_d.get("valley")
-
-        # Preserve the '% PVS' column from source (no transformation)
         pvs_value = d.get("% PVS")
+        beat_cycle_value = compute_beat_cycle(k)
+
+        # Store both display and numeric beat cycle
+        beat_cycle_display = round(beat_cycle_value, 1) if beat_cycle_value is not None else ""
 
         results.append({
             "Lag (long,short)": k,
-            # No Beat Cycle or Integer Count fields expected or used
+            "Beat Cycle": beat_cycle_display,
+            "_BeatCycleNum": beat_cycle_value,  # numeric version for calculations
             "DTFib Hit %": hit_pct if hit_pct is not None else 0.0,
             "Total Hits": total_hits if total_hits is not None else 0,
             "Peak Hits": peak_hits if peak_hits is not None else None,
@@ -114,10 +126,7 @@ def build_rows_from_dtfib(dt_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]
 
 
 def filter_by_min_average(rows: List[Dict[str, Any]], min_average: int) -> List[Dict[str, Any]]:
-    """
-    Filters rows by minimum 'long' cycle length in 'Lag (long,short)'.
-    Keeps only rows where long >= min_average.
-    """
+    """Filter rows by minimum long cycle."""
     filtered = []
     for row in rows:
         lag_str = row.get("Lag (long,short)")
@@ -128,13 +137,12 @@ def filter_by_min_average(rows: List[Dict[str, Any]], min_average: int) -> List[
             if long_part >= min_average:
                 filtered.append(row)
         except Exception:
-            # if parsing fails, skip the row
             continue
     return filtered
 
 
 def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
-    """Compute [0,1] phase balance: 1.0 = perfect balance."""
+    """Compute [0,1] phase balance."""
     if peak is None or valley is None:
         return 0.5
     if peak == 0 and valley == 0:
@@ -150,13 +158,7 @@ def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
 
 
 def score_and_select_topN(rows: List[Dict[str, Any]], mode: str = "growth") -> Tuple[List[Dict[str, Any]], None]:
-    """
-    Compute normalized score using hits and phase balance.
-    Returns (topN_list, None).
-
-    - Uses all rows provided (no Integer Count filtering).
-    - Returns top 5 rows by score (or fewer if not enough rows).
-    """
+    """Score rows and select top 5."""
     if not rows:
         return [], None
 
@@ -175,15 +177,12 @@ def score_and_select_topN(rows: List[Dict[str, Any]], mode: str = "growth") -> T
         hit_norm = (hit_cnt / max_hits) if max_hits > 0 else 0.0
         phase_balance = compute_phase_balance(peak, valley)
         score = hit_w * hit_norm + phase_w * phase_balance
-
         r = dict(row)
         r["Score"] = score
         scored.append(r)
 
-    # sort by score descending
     scored.sort(key=lambda x: x["Score"], reverse=True)
 
-    # pick top 5 (if fewer available, return what's there)
     topN = scored[:5]
     for i, r in enumerate(topN, start=1):
         r["Rank"] = i
@@ -201,10 +200,12 @@ def main(argv: Optional[List[str]] = None):
                         help="Comma-separated symbols to score with cyclic algorithm. Example: -c CLF,USO")
     parser.add_argument("-ma", "--min-average", nargs="?", const=200, type=int, default=200,
                         help="Minimum long-term cycle (default 200 if omitted or no value supplied)")
-
+    parser.add_argument("-p", "--psd-peak", type=float, required=False,
+                        help="Optional PSD peak value (in days). Adds 'PSD Alignment' column per row using nearest beat harmonic.")
     args = parser.parse_args(argv)
 
     min_average = args.min_average
+    psd_peak = args.psd_peak
     s_list = [s.strip() for s in args.symbols.split(",")] if args.symbols else []
     c_list = [s.strip() for s in args.cyclic.split(",")] if args.cyclic else []
 
@@ -229,35 +230,43 @@ def main(argv: Optional[List[str]] = None):
     for sym in symbols:
         mode = symbol_modes.get(sym, "growth")
         dt_path = os.path.join("DTFib_results", f"DTFib_{sym}_N.csv")
-
         dt_rows = read_csv_to_dict(dt_path)
-
         if not dt_rows:
             print(f"[WARN] No DTFib file found for '{sym}'. Skipping.")
             continue
 
-        # Build rows from DTFib only
         rows = build_rows_from_dtfib(dt_rows)
-
-        # Apply minimum-average filter on long lag
         rows = filter_by_min_average(rows, min_average)
-
         if not rows:
             print(f"[WARN] No rows for '{sym}' after applying -ma {min_average} filter. Skipping.")
             continue
 
         topN, _ = score_and_select_topN(rows, mode=mode)
-
         for r in topN:
-            out_rows.append({
+            psd_align_val: Optional[float] = None
+            if psd_peak is not None:
+                try:
+                    long_part = float(r.get("Lag (long,short)").split(",")[0].strip())
+                    beat_num = r.get("_BeatCycleNum")
+                    if beat_num and beat_num > 0:
+                        x = round((psd_peak - long_part) / beat_num)
+                        psd_align_val = abs(psd_peak - (long_part + x * beat_num))
+                except Exception:
+                    psd_align_val = None
+
+            row_out: Dict[str, Any] = {
                 "Symbol": sym,
                 "Rank": r.get("Rank"),
                 "Lag (long,short)": r.get("Lag (long,short)"),
+                "Beat Cycle": r.get("Beat Cycle"),
                 "DTFib Hit %": round(float(r.get("DTFib Hit %", 0.0)), 4),
                 "Total Hits": int(r.get("Total Hits", 0)),
                 "% PVS": r.get("% PVS"),
-                "Score": round(float(r.get("Score", 0.0)), 6)
-            })
+                "Score": round(float(r.get("Score", 0.0)), 2)
+            }
+            if psd_peak is not None:
+                row_out["PSD Alignment"] = round(psd_align_val, 1) if psd_align_val is not None else ""
+            out_rows.append(row_out)
 
         print(f"[OK] {sym}: selected {len(topN)} top pairs (mode={mode}), min long lag {min_average} days.")
 
@@ -265,7 +274,11 @@ def main(argv: Optional[List[str]] = None):
         print("[ERROR] No results to write; exiting.", file=sys.stderr)
         sys.exit(1)
 
-    fieldnames = ["Symbol", "Rank", "Lag (long,short)", "DTFib Hit %", "Total Hits", "% PVS", "Score"]
+    fieldnames = ["Symbol", "Rank", "Lag (long,short)", "Beat Cycle",
+                  "DTFib Hit %", "Total Hits", "% PVS", "Score"]
+    if psd_peak is not None:
+        fieldnames.append("PSD Alignment")
+
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
