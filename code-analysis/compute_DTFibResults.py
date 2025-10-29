@@ -18,7 +18,7 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 
 # === Config ===
-TOP_N = 5  # change this to 10/20 as you like
+TOP_N = 10  # change this to 10/20 as you like
 YW_R2_SCRIPT = "compute_yw_R2.py"  # expected to be in same directory and callable with sys.executable
 HISTORICAL_SUFFIX = ".csv"  # historical file expected at historical_data/<SYMBOL>.csv
 # ==============
