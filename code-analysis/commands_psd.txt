@@ -1,8 +1,8 @@
-python .\research_psd.py -f BTC-USD.csv -c
-python .\research_psd.py -f CLF.csv
-python .\research_psd.py -f DX-Y.NYB.csv
-python .\research_psd.py -f GCF.csv
-python .\research_psd.py -f GSPC.csv
-python .\research_psd.py -f Roku.csv
-python .\research_psd.py -f Uber.csv
-python .\research_psd.py -f XLE.csv
+python .\research_psd.py -f BTC-USD.csv -vh -c
+python .\research_psd.py -f CLF.csv -vh
+python .\research_psd.py -f DX-Y.NYB.csv -vl 
+python .\research_psd.py -f GCF.csv -vl
+python .\research_psd.py -f GSPC.csv -vl
+python .\research_psd.py -f Roku.csv -vh
+python .\research_psd.py -f Uber.csv -vh
+python .\research_psd.py -f XLE.csv -vl
