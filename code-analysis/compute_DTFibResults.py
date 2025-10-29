@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
 """
-DTFib-only selection script
+DTFib-only selection script (updated)
 
-This version:
-- Uses only DTFib results (DTFib_results/DTFib_<sym>_N.csv).
-- Keeps phase-balance scoring (searches for Peak/Valley keys in DTFib CSV).
-- Keeps -ma / --min-average filtering on the long lag (default 200).
-- Selects the top 5 candidates by score (normalized Total Hits + phase balance).
-- Adds "Beat Cycle" column immediately after "Lag (long,short)".
-- Optional -p / --psd-peak <value> to compute "PSD Alignment" per row using nearest beat harmonic:
-      x = round((PSD - long) / beat)
-      PSD Alignment = abs(PSD - (long + x * beat))
+Changes in this variant:
+- If multiple symbols are given, a single combined CSV is produced with the symbols
+  concatenated with underscores (e.g. DTFib_Results_CLF_XLE_DX-Y.NYB_GCF.csv).
+- Output file is written into the current working directory (not DTFib_Results/).
+- TOP_N is configurable at the top of the file.
+- Invokes compute_yw_R2.py for each top candidate and appends OOS R^2 (2-decimal).
 """
 from __future__ import annotations
 import csv
 import os
 import sys
+import subprocess
+import re
 from typing import List, Dict, Any, Optional, Tuple
 
-OUT_CSV = "DTFib_Results_Top5.csv"
+# === Config ===
+TOP_N = 5  # change this to 10/20 as you like
+YW_R2_SCRIPT = "compute_yw_R2.py"  # expected to be in same directory and callable with sys.executable
+HISTORICAL_SUFFIX = ".csv"  # historical file expected at historical_data/<SYMBOL>.csv
+# ==============
 
 # === Scoring weights ===
 GROWTH_HIT_W: float = 0.80
@@ -158,7 +161,7 @@ def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
 
 
 def score_and_select_topN(rows: List[Dict[str, Any]], mode: str = "growth") -> Tuple[List[Dict[str, Any]], None]:
-    """Score rows and select top 5."""
+    """Score rows and select top N (TOP_N)."""
     if not rows:
         return [], None
 
@@ -183,11 +186,41 @@ def score_and_select_topN(rows: List[Dict[str, Any]], mode: str = "growth") -> T
 
     scored.sort(key=lambda x: x["Score"], reverse=True)
 
-    topN = scored[:5]
+    topN = scored[:TOP_N]
     for i, r in enumerate(topN, start=1):
         r["Rank"] = i
 
     return topN, None
+
+
+def invoke_compute_yw_r2(symbol: str, lag_str: str) -> Optional[float]:
+    """
+    Call compute_yw_R2.py with '-f <symbol>.csv -l <lag_str>'.
+    Returns parsed OOS R^2 (float) on success, or None on failure.
+    """
+    # Build file argument (script expects filename relative to historical_data/)
+    file_arg = f"{symbol}{HISTORICAL_SUFFIX}"
+    cmd = [sys.executable, YW_R2_SCRIPT, "-f", file_arg, "-l", lag_str]
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        stdout = completed.stdout or ""
+        # Regex same as compute_yw_R2_Grid uses
+        match = re.search(r"Linear OLS \(Polynomial Degree 1\):\s*(-?\d+\.\d+)", stdout)
+        if match:
+            try:
+                return float(match.group(1))
+            except Exception:
+                return None
+        else:
+            # no match found
+            return None
+    except subprocess.CalledProcessError as e:
+        # log error but continue
+        print(f"[R2 ERROR] symbol={symbol} lags={lag_str} -> subprocess error: {e.stderr.strip()}", file=sys.stderr)
+        return None
+    except FileNotFoundError:
+        print(f"[R2 ERROR] Could not find {YW_R2_SCRIPT} or python executable.", file=sys.stderr)
+        return None
 
 
 def main(argv: Optional[List[str]] = None):
@@ -225,7 +258,11 @@ def main(argv: Optional[List[str]] = None):
         print("[ERROR] No symbols provided.", file=sys.stderr)
         sys.exit(2)
 
-    out_rows: List[Dict[str, Any]] = []
+    # Combined output accumulator (we will write a single CSV containing all symbols)
+    combined_out_rows: List[Dict[str, Any]] = []
+
+    # Keep track of whether PSD column is used (global arg)
+    psd_included = psd_peak is not None
 
     for sym in symbols:
         mode = symbol_modes.get(sym, "growth")
@@ -242,6 +279,7 @@ def main(argv: Optional[List[str]] = None):
             continue
 
         topN, _ = score_and_select_topN(rows, mode=mode)
+
         for r in topN:
             psd_align_val: Optional[float] = None
             if psd_peak is not None:
@@ -254,6 +292,12 @@ def main(argv: Optional[List[str]] = None):
                 except Exception:
                     psd_align_val = None
 
+            # Invoke compute_yw_R2.py for this candidate and capture OOS R^2
+            lag_value_str = r.get("Lag (long,short)")
+            oos_r2_val = None
+            if lag_value_str:
+                oos_r2_val = invoke_compute_yw_r2(sym, lag_value_str)
+
             row_out: Dict[str, Any] = {
                 "Symbol": sym,
                 "Rank": r.get("Rank"),
@@ -264,27 +308,40 @@ def main(argv: Optional[List[str]] = None):
                 "% PVS": r.get("% PVS"),
                 "Score": round(float(r.get("Score", 0.0)), 2)
             }
-            if psd_peak is not None:
+            if psd_included:
                 row_out["PSD Alignment"] = round(psd_align_val, 1) if psd_align_val is not None else ""
-            out_rows.append(row_out)
 
-        print(f"[OK] {sym}: selected {len(topN)} top pairs (mode={mode}), min long lag {min_average} days.")
+            # Add OOS R^2 column (rounded to 2 decimals) at the end
+            row_out["OOS R^2"] = f"{oos_r2_val:.2f}" if (oos_r2_val is not None) else ""
 
-    if not out_rows:
-        print("[ERROR] No results to write; exiting.", file=sys.stderr)
-        sys.exit(1)
+            combined_out_rows.append(row_out)
 
+    # After processing all symbols, write a single combined CSV to the current working directory.
+    if not combined_out_rows:
+        print("[WARN] No output rows generated (check input files/paths).")
+        return
+
+    # Build a safe filename based on supplied symbols
+    joined_symbols = "_".join([s.replace("/", "-").replace("\\", "-") for s in symbols])
+    out_filename = f"DTFib_Results_{joined_symbols}.csv"
+
+    # Fieldnames: preserve order, include PSD column only if used
     fieldnames = ["Symbol", "Rank", "Lag (long,short)", "Beat Cycle",
                   "DTFib Hit %", "Total Hits", "% PVS", "Score"]
-    if psd_peak is not None:
+    if psd_included:
         fieldnames.append("PSD Alignment")
+    fieldnames.append("OOS R^2")
 
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(out_rows)
-
-    print(f"[DONE] Wrote {len(out_rows)} rows to {OUT_CSV}")
+    # Write to current directory (not into a DTFib_Results folder)
+    out_path = os.path.join(os.getcwd(), out_filename)
+    try:
+        with open(out_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(combined_out_rows)
+        print(f"[DONE] Wrote {len(combined_out_rows)} rows to {out_path}")
+    except Exception as e:
+        print(f"[ERROR] Could not write output file {out_path}: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
