@@ -8,7 +8,7 @@ a summary row into research_output/research_psd_ALL.csv.
 Behavior:
 - Six initial ranges return top 10 peaks each.
 - The final range (150-700) returns top 20 peaks.
-- _ALL file row format: Symbol, <centroid150_200>, <centroid200_700>, <centroid300_700>, <centroid400_700>
+- _ALL file row format: Symbol, <centroid150_700>, <centroid200_700>, <centroid300_700>, <centroid400_700>
 - Writes header only when --clear-summary is passed or first creation.
 """
 
@@ -115,11 +115,11 @@ def compute_centroid(series, rmin, rmax):
     return f"{c:.2f}"
 
 
-def write_all(file, c150_200, c200_700, c300_700, c400_700, clear):
+def write_all(file, c150_700, c200_700, c300_700, c400_700, clear):
     os.makedirs("research_output", exist_ok=True)
     fn = "research_output/research_psd_ALL.csv"
-    header = ["Symbol","Centroid150_200","Centroid200_700","Centroid300_700","Centroid400_700"]
-    row = [file,c150_200,c200_700,c300_700,c400_700]
+    header = ["Symbol","Centroid150_700","Centroid200_700","Centroid300_700","Centroid400_700"]
+    row = [file,c150_700,c200_700,c300_700,c400_700]
 
     if clear:
         with open(fn, "w", newline="") as f:
@@ -236,7 +236,7 @@ def main():
 
     write_all(
         name,
-        compute_centroid(series,150,200),
+        compute_centroid(series,150,700),
         compute_centroid(series,200,700),
         compute_centroid(series,300,700),
         compute_centroid(series,400,700),
