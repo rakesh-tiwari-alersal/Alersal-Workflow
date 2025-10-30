@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-DTFib-only selection script (updated)
+DTFib-only selection script (cleaned)
 
-Changes in this variant:
-- If multiple symbols are given, a single combined CSV is produced with the symbols
-  concatenated with underscores (e.g. DTFib_Results_CLF_XLE_DX-Y.NYB_GCF.csv).
+- Produces a single combined CSV when multiple symbols are supplied.
 - Output file is written into the current working directory (not DTFib_Results/).
 - TOP_N is configurable at the top of the file.
 - Invokes compute_yw_R2.py for each top candidate and appends OOS R^2 (2-decimal).
+- Beat-cycle analysis removed; no -p/--psd-peak arg; no optional PSD Alignment column.
 """
 from __future__ import annotations
 import csv
@@ -84,19 +83,6 @@ def _find_phase_keys(row: Dict[str, str]) -> Dict[str, Optional[int]]:
     return {"peak": peak, "valley": valley}
 
 
-def compute_beat_cycle(lag_str: str) -> Optional[float]:
-    """Compute beat cycle given 'Lag (long,short)'."""
-    if not lag_str or "," not in lag_str:
-        return None
-    try:
-        long_lag, short_lag = [float(x.strip()) for x in lag_str.split(",")]
-        if long_lag <= 0 or short_lag <= 0 or long_lag == short_lag:
-            return None
-        return 1.0 / abs((1.0 / long_lag) - (1.0 / short_lag))
-    except Exception:
-        return None
-
-
 def build_rows_from_dtfib(dt_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     """Build rows entirely from DTFib CSV."""
     results: List[Dict[str, Any]] = []
@@ -110,15 +96,9 @@ def build_rows_from_dtfib(dt_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]
         peak_hits = p_d.get("peak")
         valley_hits = p_d.get("valley")
         pvs_value = d.get("% PVS")
-        beat_cycle_value = compute_beat_cycle(k)
-
-        # Store both display and numeric beat cycle
-        beat_cycle_display = round(beat_cycle_value, 1) if beat_cycle_value is not None else ""
 
         results.append({
             "Lag (long,short)": k,
-            "Beat Cycle": beat_cycle_display,
-            "_BeatCycleNum": beat_cycle_value,  # numeric version for calculations
             "DTFib Hit %": hit_pct if hit_pct is not None else 0.0,
             "Total Hits": total_hits if total_hits is not None else 0,
             "Peak Hits": peak_hits if peak_hits is not None else None,
@@ -198,24 +178,19 @@ def invoke_compute_yw_r2(symbol: str, lag_str: str) -> Optional[float]:
     Call compute_yw_R2.py with '-f <symbol>.csv -l <lag_str>'.
     Returns parsed OOS R^2 (float) on success, or None on failure.
     """
-    # Build file argument (script expects filename relative to historical_data/)
-    file_arg = f"{symbol}{HISTORICAL_SUFFIX}"
+    file_arg = f"{symbol}{HISTORICAL_SUFFIX}"  # script expects filename relative to historical_data/
     cmd = [sys.executable, YW_R2_SCRIPT, "-f", file_arg, "-l", lag_str]
     try:
         completed = subprocess.run(cmd, capture_output=True, text=True, check=True)
         stdout = completed.stdout or ""
-        # Regex same as compute_yw_R2_Grid uses
         match = re.search(r"Linear OLS \(Polynomial Degree 1\):\s*(-?\d+\.\d+)", stdout)
         if match:
             try:
                 return float(match.group(1))
             except Exception:
                 return None
-        else:
-            # no match found
-            return None
+        return None
     except subprocess.CalledProcessError as e:
-        # log error but continue
         print(f"[R2 ERROR] symbol={symbol} lags={lag_str} -> subprocess error: {e.stderr.strip()}", file=sys.stderr)
         return None
     except FileNotFoundError:
@@ -233,12 +208,9 @@ def main(argv: Optional[List[str]] = None):
                         help="Comma-separated symbols to score with cyclic algorithm. Example: -c CLF,USO")
     parser.add_argument("-ma", "--min-average", nargs="?", const=200, type=int, default=200,
                         help="Minimum long-term cycle (default 200 if omitted or no value supplied)")
-    parser.add_argument("-p", "--psd-peak", type=float, required=False,
-                        help="Optional PSD peak value (in days). Adds 'PSD Alignment' column per row using nearest beat harmonic.")
     args = parser.parse_args(argv)
 
     min_average = args.min_average
-    psd_peak = args.psd_peak
     s_list = [s.strip() for s in args.symbols.split(",")] if args.symbols else []
     c_list = [s.strip() for s in args.cyclic.split(",")] if args.cyclic else []
 
@@ -258,11 +230,7 @@ def main(argv: Optional[List[str]] = None):
         print("[ERROR] No symbols provided.", file=sys.stderr)
         sys.exit(2)
 
-    # Combined output accumulator (we will write a single CSV containing all symbols)
     combined_out_rows: List[Dict[str, Any]] = []
-
-    # Keep track of whether PSD column is used (global arg)
-    psd_included = psd_peak is not None
 
     for sym in symbols:
         mode = symbol_modes.get(sym, "growth")
@@ -281,17 +249,6 @@ def main(argv: Optional[List[str]] = None):
         topN, _ = score_and_select_topN(rows, mode=mode)
 
         for r in topN:
-            psd_align_val: Optional[float] = None
-            if psd_peak is not None:
-                try:
-                    long_part = float(r.get("Lag (long,short)").split(",")[0].strip())
-                    beat_num = r.get("_BeatCycleNum")
-                    if beat_num and beat_num > 0:
-                        x = round((psd_peak - long_part) / beat_num)
-                        psd_align_val = abs(psd_peak - (long_part + x * beat_num))
-                except Exception:
-                    psd_align_val = None
-
             # Invoke compute_yw_R2.py for this candidate and capture OOS R^2
             lag_value_str = r.get("Lag (long,short)")
             oos_r2_val = None
@@ -302,37 +259,27 @@ def main(argv: Optional[List[str]] = None):
                 "Symbol": sym,
                 "Rank": r.get("Rank"),
                 "Lag (long,short)": r.get("Lag (long,short)"),
-                "Beat Cycle": r.get("Beat Cycle"),
                 "DTFib Hit %": round(float(r.get("DTFib Hit %", 0.0)), 4),
                 "Total Hits": int(r.get("Total Hits", 0)),
                 "% PVS": r.get("% PVS"),
-                "Score": round(float(r.get("Score", 0.0)), 2)
+                "Score": round(float(r.get("Score", 0.0)), 2),
+                "OOS R^2": f"{oos_r2_val:.2f}" if (oos_r2_val is not None) else ""
             }
-            if psd_included:
-                row_out["PSD Alignment"] = round(psd_align_val, 1) if psd_align_val is not None else ""
-
-            # Add OOS R^2 column (rounded to 2 decimals) at the end
-            row_out["OOS R^2"] = f"{oos_r2_val:.2f}" if (oos_r2_val is not None) else ""
 
             combined_out_rows.append(row_out)
 
-    # After processing all symbols, write a single combined CSV to the current working directory.
     if not combined_out_rows:
         print("[WARN] No output rows generated (check input files/paths).")
         return
 
-    # Build a safe filename based on supplied symbols
     joined_symbols = "_".join([s.replace("/", "-").replace("\\", "-") for s in symbols])
     out_filename = f"DTFib_Results_{joined_symbols}.csv"
 
-    # Fieldnames: preserve order, include PSD column only if used
-    fieldnames = ["Symbol", "Rank", "Lag (long,short)", "Beat Cycle",
-                  "DTFib Hit %", "Total Hits", "% PVS", "Score"]
-    if psd_included:
-        fieldnames.append("PSD Alignment")
-    fieldnames.append("OOS R^2")
+    fieldnames = [
+        "Symbol", "Rank", "Lag (long,short)",
+        "DTFib Hit %", "Total Hits", "% PVS", "Score", "OOS R^2"
+    ]
 
-    # Write to current directory (not into a DTFib_Results folder)
     out_path = os.path.join(os.getcwd(), out_filename)
     try:
         with open(out_path, "w", newline="", encoding="utf-8") as f:
