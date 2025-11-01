@@ -42,7 +42,7 @@ def parse_lag_list(s, max_allowed, name):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Wrapper for compute_DTFib.py across short×long lag combinations"
+        description="Wrapper for compute_DTFib.py across ALL short×long lag combinations"
     )
     parser.add_argument(
         "-f", "--file",
@@ -50,14 +50,6 @@ def main():
         required=True,
         help="CSV filename inside historical_data/"
     )
-
-    # Removed -b / --base completely; we now always use the full long-lag list.
-
-    vol_group = parser.add_mutually_exclusive_group(required=True)
-    vol_group.add_argument("-vh", "--vol-high", action="store_true",
-                           help="High volatility preset short-lags (17,20,23,25,27)")
-    vol_group.add_argument("-vl", "--vol-low", action="store_true",
-                           help="Low volatility preset short-lags (31,36,41,47)")
     parser.add_argument(
         "-t", "--tolerance",
         type=float,
@@ -74,14 +66,8 @@ def main():
         print(f"Error: data file not found: {data_file}", file=sys.stderr)
         sys.exit(2)
 
-    # Determine short_lags based on volatility flag
-    if args.vol_high:
-        short_lags = [17, 20, 23, 25, 27]
-    elif args.vol_low:
-        short_lags = [31, 36, 41, 47]
-    else:
-        print("Error: must specify either -vh/--vol-high or -vl/--vol-low", file=sys.stderr)
-        sys.exit(2)
+    # Always use all short-term cycles (full universe)
+    short_lags = [17, 20, 23, 25, 27, 31, 36, 41, 47]
 
     # Full long-term lags table (complete set)
     all_long_lags = [
@@ -96,7 +82,7 @@ def main():
     long_lags = list(all_long_lags)
 
     print(f"Using all long-term cycles: {long_lags}")
-    print(f"Using short cycles (volatility preset): {short_lags}")
+    print(f"Using short cycles (full universe): {short_lags}")
 
     results = []
 

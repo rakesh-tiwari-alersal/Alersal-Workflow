@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-DTFib-only selection script (cleaned)
+DTFib-only selection script (no growth/cyclic modes)
 
-- Produces a single combined CSV when multiple symbols are supplied.
+- Accepts symbols via -s/--symbols (comma-separated).
+- Produces a single combined CSV for all provided symbols.
 - Output file is written into the current working directory (not DTFib_Results/).
 - TOP_N is configurable at the top of the file.
 - Invokes compute_yw_R2.py for each top candidate and appends OOS R^2 (2-decimal).
-- Beat-cycle analysis removed; no -p/--psd-peak arg; no optional PSD Alignment column.
+- Scoring uses HIT vs PHASE weights: HIT_WEIGHT and (1 - HIT_WEIGHT), set at top.
 """
 from __future__ import annotations
 import csv
@@ -20,15 +21,11 @@ from typing import List, Dict, Any, Optional, Tuple
 TOP_N = 10  # change this to 10/20 as you like
 YW_R2_SCRIPT = "compute_yw_R2.py"  # expected to be in same directory and callable with sys.executable
 HISTORICAL_SUFFIX = ".csv"  # historical file expected at historical_data/<SYMBOL>.csv
+
+# HIT vs PHASE weights (phase weight is 1 - HIT_WEIGHT)
+HIT_WEIGHT: float = 0.75
+PHASE_WEIGHT: float = 1.0 - HIT_WEIGHT
 # ==============
-
-# === Scoring weights ===
-GROWTH_HIT_W: float = 0.80
-GROWTH_PHASE_W: float = 0.20
-
-CYCLIC_HIT_W: float = 0.75
-CYCLIC_PHASE_W: float = 0.25
-# ========================
 
 
 def read_csv_to_dict(path: str) -> List[Dict[str, str]]:
@@ -124,6 +121,26 @@ def filter_by_min_average(rows: List[Dict[str, Any]], min_average: int) -> List[
     return filtered
 
 
+def filter_by_short_lags(rows: List[Dict[str, Any]], allowed_shorts: List[int]) -> List[Dict[str, Any]]:
+    """Keep rows whose SHORT lag (second element in 'long,short') is in allowed_shorts."""
+    out = []
+    allowed = set(int(x) for x in allowed_shorts)
+    for row in rows:
+        lag_str = row.get("Lag (long,short)")
+        if not lag_str or "," not in lag_str:
+            continue
+        try:
+            parts = [int(x.strip()) for x in lag_str.split(",")]
+            if len(parts) != 2:
+                continue
+            _, short_lag = parts[0], parts[1]
+            if short_lag in allowed:
+                out.append(row)
+        except Exception:
+            continue
+    return out
+
+
 def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
     """Compute [0,1] phase balance."""
     if peak is None or valley is None:
@@ -140,15 +157,12 @@ def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
         return 0.5
 
 
-def score_and_select_topN(rows: List[Dict[str, Any]], mode: str = "growth") -> Tuple[List[Dict[str, Any]], None]:
-    """Score rows and select top N (TOP_N)."""
+def score_and_select_topN(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], None]:
+    """Score rows and select top N (TOP_N) using HIT vs PHASE weights."""
     if not rows:
         return [], None
 
-    if mode == "growth":
-        hit_w, phase_w = GROWTH_HIT_W, GROWTH_PHASE_W
-    else:
-        hit_w, phase_w = CYCLIC_HIT_W, CYCLIC_PHASE_W
+    hit_w, phase_w = HIT_WEIGHT, PHASE_WEIGHT
 
     max_hits = max((int(row.get("Total Hits", 0)) for row in rows), default=0)
     scored: List[Dict[str, Any]] = []
@@ -201,39 +215,42 @@ def invoke_compute_yw_r2(symbol: str, lag_str: str) -> Optional[float]:
 def main(argv: Optional[List[str]] = None):
     import argparse
 
-    parser = argparse.ArgumentParser(description="Select top lag pairs per symbol using DTFib results only.")
-    parser.add_argument("-s", "--symbols", type=str, required=False,
-                        help="Comma-separated symbols for growth mode. Example: -s GSPC,BTC-USD")
-    parser.add_argument("-c", "--cyclic", type=str, required=False,
-                        help="Comma-separated symbols to score with cyclic algorithm. Example: -c CLF,USO")
+    parser = argparse.ArgumentParser(description="Select top lag pairs per symbol using DTFib results only (no growth/cyclic modes).")
+    parser.add_argument("-s", "--symbols", type=str, required=True,
+                        help="Comma-separated symbols. Example: -s GSPC,BTC-USD")
     parser.add_argument("-ma", "--min-average", nargs="?", const=200, type=int, default=200,
                         help="Minimum long-term cycle (default 200 if omitted or no value supplied)")
+
+    # Volatility presets (mutually exclusive). Default is -va (all).
+    vol_group = parser.add_mutually_exclusive_group()
+    vol_group.add_argument("-va", "--vol-all", action="store_true",
+                           help="Use ALL short-lags: 17,20,23,25,27,31,36,41,47 (default)")
+    vol_group.add_argument("-vh", "--vol-high", action="store_true",
+                           help="Use HIGH-vol short-lags: 17,20,23,25,27")
+    vol_group.add_argument("-vl", "--vol-low", action="store_true",
+                           help="Use LOW-vol short-lags: 31,36,41,47")
+
     args = parser.parse_args(argv)
 
+    # Select short-lag preset (default -va)
+    if args.vol_high:
+        short_lags = [17, 20, 23, 25, 27]
+    elif args.vol_low:
+        short_lags = [31, 36, 41, 47]
+    else:
+        short_lags = [17, 20, 23, 25, 27, 31, 36, 41, 47]
+
     min_average = args.min_average
-    s_list = [s.strip() for s in args.symbols.split(",")] if args.symbols else []
-    c_list = [s.strip() for s in args.cyclic.split(",")] if args.cyclic else []
 
-    symbols: List[str] = []
-    symbol_modes: Dict[str, str] = {}
-    for s in s_list:
-        if s:
-            symbols.append(s)
-            symbol_modes[s] = "growth"
-    for s in c_list:
-        if s:
-            if s not in symbols:
-                symbols.append(s)
-            symbol_modes[s] = "cyclic"
-
+    # Parse symbols list
+    symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
     if not symbols:
-        print("[ERROR] No symbols provided.", file=sys.stderr)
+        print("[ERROR] No symbols provided after parsing -s.", file=sys.stderr)
         sys.exit(2)
 
     combined_out_rows: List[Dict[str, Any]] = []
 
     for sym in symbols:
-        mode = symbol_modes.get(sym, "growth")
         dt_path = os.path.join("DTFib_results", f"DTFib_{sym}_N.csv")
         dt_rows = read_csv_to_dict(dt_path)
         if not dt_rows:
@@ -241,12 +258,15 @@ def main(argv: Optional[List[str]] = None):
             continue
 
         rows = build_rows_from_dtfib(dt_rows)
+        # First filter by short-lag volatility preset
+        rows = filter_by_short_lags(rows, short_lags)
+        # Then apply min-average (long-lag) filter
         rows = filter_by_min_average(rows, min_average)
         if not rows:
-            print(f"[WARN] No rows for '{sym}' after applying -ma {min_average} filter. Skipping.")
+            print(f"[WARN] No rows for '{sym}' after applying volatility preset and -ma {min_average} filter. Skipping.")
             continue
 
-        topN, _ = score_and_select_topN(rows, mode=mode)
+        topN, _ = score_and_select_topN(rows)
 
         for r in topN:
             # Invoke compute_yw_R2.py for this candidate and capture OOS R^2
