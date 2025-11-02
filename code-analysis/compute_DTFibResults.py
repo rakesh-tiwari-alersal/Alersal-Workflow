@@ -18,18 +18,16 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 
 # === Config ===
-TOP_N = 10  # change this to 10/20 as you like
-YW_R2_SCRIPT = "compute_yw_R2.py"  # expected to be in same directory and callable with sys.executable
-HISTORICAL_SUFFIX = ".csv"  # historical file expected at historical_data/<SYMBOL>.csv
+TOP_N = 10
+YW_R2_SCRIPT = "compute_yw_R2.py"
+HISTORICAL_SUFFIX = ".csv"
 
-# HIT vs PHASE weights (phase weight is 1 - HIT_WEIGHT)
 HIT_WEIGHT: float = 0.75
 PHASE_WEIGHT: float = 1.0 - HIT_WEIGHT
 # ==============
 
 
 def read_csv_to_dict(path: str) -> List[Dict[str, str]]:
-    """Read CSV to list of dict rows. Returns [] on missing file."""
     if not os.path.isfile(path):
         return []
     with open(path, newline="", encoding="utf-8") as f:
@@ -64,7 +62,6 @@ def parse_int(x: Optional[str]) -> Optional[int]:
 
 
 def _find_phase_keys(row: Dict[str, str]) -> Dict[str, Optional[int]]:
-    """Find peak/valley hit columns."""
     possible_peak_keys = ["Peak Hits", "PeakHits", "Peak_Hits", "Peaks"]
     possible_valley_keys = ["Valley Hits", "ValleyHits", "Valley_Hits", "Valleys"]
     peak = None
@@ -81,7 +78,6 @@ def _find_phase_keys(row: Dict[str, str]) -> Dict[str, Optional[int]]:
 
 
 def build_rows_from_dtfib(dt_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-    """Build rows entirely from DTFib CSV."""
     results: List[Dict[str, Any]] = []
     for d in dt_rows:
         k = d.get("Lag (long,short)")
@@ -106,7 +102,6 @@ def build_rows_from_dtfib(dt_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]
 
 
 def filter_by_min_average(rows: List[Dict[str, Any]], min_average: int) -> List[Dict[str, Any]]:
-    """Filter rows by minimum long cycle."""
     filtered = []
     for row in rows:
         lag_str = row.get("Lag (long,short)")
@@ -122,7 +117,6 @@ def filter_by_min_average(rows: List[Dict[str, Any]], min_average: int) -> List[
 
 
 def filter_by_short_lags(rows: List[Dict[str, Any]], allowed_shorts: List[int]) -> List[Dict[str, Any]]:
-    """Keep rows whose SHORT lag (second element in 'long,short') is in allowed_shorts."""
     out = []
     allowed = set(int(x) for x in allowed_shorts)
     for row in rows:
@@ -142,7 +136,6 @@ def filter_by_short_lags(rows: List[Dict[str, Any]], allowed_shorts: List[int]) 
 
 
 def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
-    """Compute [0,1] phase balance."""
     if peak is None or valley is None:
         return 0.5
     if peak == 0 and valley == 0:
@@ -158,12 +151,10 @@ def compute_phase_balance(peak: Optional[int], valley: Optional[int]) -> float:
 
 
 def score_and_select_topN(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], None]:
-    """Score rows and select top N (TOP_N) using HIT vs PHASE weights."""
     if not rows:
         return [], None
 
     hit_w, phase_w = HIT_WEIGHT, PHASE_WEIGHT
-
     max_hits = max((int(row.get("Total Hits", 0)) for row in rows), default=0)
     scored: List[Dict[str, Any]] = []
 
@@ -188,11 +179,7 @@ def score_and_select_topN(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, An
 
 
 def invoke_compute_yw_r2(symbol: str, lag_str: str) -> Optional[float]:
-    """
-    Call compute_yw_R2.py with '-f <symbol>.csv -l <lag_str>'.
-    Returns parsed OOS R^2 (float) on success, or None on failure.
-    """
-    file_arg = f"{symbol}{HISTORICAL_SUFFIX}"  # script expects filename relative to historical_data/
+    file_arg = f"{symbol}{HISTORICAL_SUFFIX}"
     cmd = [sys.executable, YW_R2_SCRIPT, "-f", file_arg, "-l", lag_str]
     try:
         completed = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -215,34 +202,26 @@ def invoke_compute_yw_r2(symbol: str, lag_str: str) -> Optional[float]:
 def main(argv: Optional[List[str]] = None):
     import argparse
 
-    parser = argparse.ArgumentParser(description="Select top lag pairs per symbol using DTFib results only (no growth/cyclic modes).")
+    parser = argparse.ArgumentParser(description="Select top lag pairs per symbol using DTFib results only")
     parser.add_argument("-s", "--symbols", type=str, required=True,
                         help="Comma-separated symbols. Example: -s GSPC,BTC-USD")
     parser.add_argument("-ma", "--min-average", nargs="?", const=200, type=int, default=200,
-                        help="Minimum long-term cycle (default 200 if omitted or no value supplied)")
+                        help="Minimum long cycle (default 200)")
 
-    # Volatility presets (mutually exclusive). Default is -va (all).
-    vol_group = parser.add_mutually_exclusive_group()
-    vol_group.add_argument("-va", "--vol-all", action="store_true",
-                           help="Use ALL short-lags: 17,20,23,25,27,31,36,41,47 (default)")
-    vol_group.add_argument("-vh", "--vol-high", action="store_true",
-                           help="Use HIGH-vol short-lags: 17,20,23,25,27")
-    vol_group.add_argument("-vl", "--vol-low", action="store_true",
-                           help="Use LOW-vol short-lags: 31,36,41,47")
+    # ✅ Simplified volatility switch
+    parser.add_argument("-vl", "--vol-low", action="store_true",
+                        help="Include lower short-lags 17,20 in addition to defaults")
 
     args = parser.parse_args(argv)
 
-    # Select short-lag preset (default -va)
-    if args.vol_high:
-        short_lags = [17, 20, 23, 25, 27]
-    elif args.vol_low:
-        short_lags = [31, 36, 41, 47]
-    else:
+    # ✅ Default short lags, expand if -vl passed
+    if args.vol_low:
         short_lags = [17, 20, 23, 25, 27, 31, 36, 41, 47]
+    else:
+        short_lags = [23, 25, 27, 31, 36, 41, 47]
 
     min_average = args.min_average
 
-    # Parse symbols list
     symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
     if not symbols:
         print("[ERROR] No symbols provided after parsing -s.", file=sys.stderr)
@@ -258,18 +237,15 @@ def main(argv: Optional[List[str]] = None):
             continue
 
         rows = build_rows_from_dtfib(dt_rows)
-        # First filter by short-lag volatility preset
         rows = filter_by_short_lags(rows, short_lags)
-        # Then apply min-average (long-lag) filter
         rows = filter_by_min_average(rows, min_average)
         if not rows:
-            print(f"[WARN] No rows for '{sym}' after applying volatility preset and -ma {min_average} filter. Skipping.")
+            print(f"[WARN] No rows for '{sym}' after -vl filter + -ma {min_average}. Skipping.")
             continue
 
         topN, _ = score_and_select_topN(rows)
 
         for r in topN:
-            # Invoke compute_yw_R2.py for this candidate and capture OOS R^2
             lag_value_str = r.get("Lag (long,short)")
             oos_r2_val = None
             if lag_value_str:
@@ -289,7 +265,7 @@ def main(argv: Optional[List[str]] = None):
             combined_out_rows.append(row_out)
 
     if not combined_out_rows:
-        print("[WARN] No output rows generated (check input files/paths).")
+        print("[WARN] No output rows generated.")
         return
 
     joined_symbols = "_".join([s.replace("/", "-").replace("\\", "-") for s in symbols])
