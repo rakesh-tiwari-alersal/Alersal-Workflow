@@ -1,32 +1,13 @@
 #!/usr/bin/env python3
-"""
-research_psd.py
-
-Produces per-symbol PSD peak tables across multiple period ranges and appends
-a summary row into research_output/research_psd_ALL.csv.
-
-Behavior:
-- Six initial ranges return top 10 peaks each.
-- The final range (150-700) returns top 20 peaks.
-- _ALL file row format (appended at the end of processing):
-  Symbol,
-  <centroid150_700>, <centroid200_700>, <centroid300_700>, <centroid400_700>,
-  <centroid200_1000>, <centroid200_All>, <MacroCutoff>
-
-Notes:
-- Centroid200_1000 : power-weighted centroid of peak periods in [200, 1000]
-- Centroid200_All  : power-weighted centroid of peak periods in [200, +∞)
-- MacroCutoff      : power-weighted centroid of peak periods in [200, Centroid200_1000]
-                     (purely data-driven; no thresholds)
-"""
+# research_psd.py
 
 from __future__ import annotations
-import os, sys, argparse, csv
+import os, argparse, csv
 import pandas as pd
 import numpy as np
 from scipy.signal import periodogram, find_peaks
 
-# PSD ranges (unchanged)
+# Ranges: final block set to 150–1000 (top 20 there)
 RANGES = [
     (15, 40),
     (30, 60),
@@ -34,9 +15,8 @@ RANGES = [
     (150, 350),
     (200, 500),
     (350, 700),
-    (150, 700)  # final block: top 20
+    (150, 1000)  # final block: top 20
 ]
-
 
 def analyze_single_range(series, rmin, rmax):
     closes = series.values
@@ -73,7 +53,7 @@ def analyze_single_range(series, rmin, rmax):
     pdf = pd.DataFrame({'Period': periods[peaks], 'Power': psd[peaks]})
     pdf = pdf.sort_values('Power', ascending=False)
 
-    top_n = 20 if (rmin == 150 and rmax == 700) else 10
+    top_n = 20 if (rmin == 150 and rmax == 1000) else 10
     pdf = pdf.head(top_n).copy()
 
     tp = pdf['Power'].sum()
@@ -83,11 +63,10 @@ def analyze_single_range(series, rmin, rmax):
     pdf['% Power'] = pdf['% Power'].round(2)
     return pdf[['Period', '% Power']]
 
-
 def compute_centroid(series, rmin, rmax=None):
     """
     Power-weighted centroid of PSD peak periods within [rmin, rmax].
-    If rmax is None, uses [rmin, +∞) (i.e., all detectable periods >= rmin).
+    If rmax is None, uses [rmin, +∞).
     Returns a formatted string with 2 decimals or "" if unavailable.
     """
     closes = series.values
@@ -113,7 +92,6 @@ def compute_centroid(series, rmin, rmax=None):
     if len(psd) == 0:
         return ""
 
-    # Use peaks to avoid smearing with low-power bins
     try:
         ht = 0.001 * np.max(psd)
     except Exception:
@@ -139,21 +117,11 @@ def compute_centroid(series, rmin, rmax=None):
     c = float(np.sum(p * w) / s)
     return f"{c:.2f}"
 
-
-def write_all(file, c150_700, c200_700, c300_700, c400_700, c200_1000, c200_all, macro_cutoff, clear):
+def write_all(symbol, c200_800, macro_cutoff, clear):
     os.makedirs("research_output", exist_ok=True)
     fn = "research_output/research_psd_ALL.csv"
-    header = [
-        "Symbol",
-        "Centroid150_700",
-        "Centroid200_700",
-        "Centroid300_700",
-        "Centroid400_700",
-        "Centroid200_1000",
-        "Centroid200_All",
-        "MacroCutoff"
-    ]
-    row = [file, c150_700, c200_700, c300_700, c400_700, c200_1000, c200_all, macro_cutoff]
+    header = ["Symbol", "Centroid_200_800", "MacroCutoff"]
+    row = [symbol, c200_800, macro_cutoff]
 
     if clear:
         with open(fn, "w", newline="") as f:
@@ -168,7 +136,6 @@ def write_all(file, c150_700, c200_700, c300_700, c400_700, c200_1000, c200_all,
         if need_header:
             w.writerow(header)
         w.writerow(row)
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -199,7 +166,7 @@ def main():
         print("Error: CSV unreadable.")
         return
 
-    # Single-range interactive mode
+    # Single-range mode
     if args.range:
         try:
             rmin, rmax = map(int, args.range.split(","))
@@ -215,7 +182,7 @@ def main():
             print("Format error. Use: -r 30,60")
             return
 
-    # Bulk ranges for the per-file table
+    # Bulk ranges for the per-symbol table
     results = {}
     for rmin, rmax in RANGES:
         r = analyze_single_range(series, rmin, rmax)
@@ -235,9 +202,9 @@ def main():
     G3 = [results.get(last, pd.DataFrame(columns=['Period', '% Power']))]
 
     maxr = max(
-        max(len(d) for d in G1),
-        max(len(d) for d in G2),
-        max(len(d) for d in G3)
+        max(len(d) for d in G1) if G1 else 0,
+        max(len(d) for d in G2) if G2 else 0,
+        max(len(d) for d in G3) if G3 else 0
     )
 
     header = []
@@ -285,36 +252,23 @@ def main():
     pd.DataFrame(rows).to_csv(out, index=False, header=False)
     print(f"Saved {out}")
 
-    # === Centroids for _ALL summary ===
-    c150_700 = compute_centroid(series, 150, 700)
-    c200_700 = compute_centroid(series, 200, 700)
-    c300_700 = compute_centroid(series, 300, 700)
-    c400_700 = compute_centroid(series, 400, 700)
-    c200_1000 = compute_centroid(series, 200, 1000)
-    c200_all = compute_centroid(series, 200, None)
+    # === Centroids for _ALL summary (Centroid_200_800 + MacroCutoff) ===
+    c200_800 = compute_centroid(series, 200, 800)
 
-    # MacroCutoff = centroid over [200, Centroid200_1000]
+    # MacroCutoff = centroid over [200, Centroid_200_800]
     try:
-        c_val = float(c200_1000) if c200_1000 not in ("", None) else None
+        c_val = float(c200_800) if c200_800 not in ("", None) else None
     except Exception:
         c_val = None
     macro_cutoff = compute_centroid(series, 200, c_val) if c_val else ""
 
-    # === _ALL summary (existing + new MacroCutoff column) ===
+    # === _ALL summary (ONLY: Symbol, Centroid_200_800, MacroCutoff) ===
     write_all(
         name,
-        c150_700,           # Centroid150_700
-        c200_700,           # Centroid200_700
-        c300_700,           # Centroid300_700
-        c400_700,           # Centroid400_700
-        c200_1000,          # Centroid200_1000
-        c200_all,           # Centroid200_All (>=200, no upper bound)
-        macro_cutoff,       # NEW: MacroCutoff = Centroid[200, Centroid200_1000]
+        c200_800,       # Centroid_200_800
+        macro_cutoff,   # MacroCutoff = Centroid[200, Centroid_200_800]
         args.clear_summary
     )
 
-
 if __name__ == "__main__":
     main()
-
-
