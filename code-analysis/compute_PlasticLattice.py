@@ -19,20 +19,24 @@ theta = np.linspace(0, theta_max, 6000)
 r = np.exp(b * theta)
 
 # -----------------------------
-# Long-cycle anchors (SPX separated at 493)
+# Long-cycle anchors (SPX separated at 493) + add AMZN & CAT
 # -----------------------------
 cycles = {
     "Uber (206)": 206,
     "Bitcoin (237)": 237,
-    "SPX (493 primary)": 493,         # <-- SPX separated, at 493
-    "DXY / XLE (362)": 362,
+    "AMZN (268)": 268,           # Innovation basin, slightly below 291
+    "CAT (308)": 308,            # Innovation basin, slightly above 291
+    "SPX (493 primary)": 493,    # SPX separated at 493
+    "DXY / XLE / SMH (362)": 362,
     "Crude / Gold (510)": 510
 }
 colors = {
     "Uber (206)": "orange",
     "Bitcoin (237)": "tab:green",
+    "AMZN (268)": "tab:purple",
+    "CAT (308)": "tab:olive",
     "SPX (493 primary)": "tab:blue",  # distinct color for SPX
-    "DXY / XLE (362)": "tab:red",
+    "DXY / XLE / SMH (362)": "tab:red",
     "Crude / Gold (510)": "tab:pink",
 }
 
@@ -94,4 +98,3 @@ ax.set_yticklabels([])
 
 plt.tight_layout()
 plt.show()
-
