@@ -25,6 +25,7 @@ cycles = {
     "Uber (206)": 206,
     "Bitcoin (237)": 237,
     "AMZN (268)": 268,           # Innovation basin, slightly below 291
+    "NVDA (291)": 291,           # Heart of Innovation basin
     "CAT (308)": 308,            # Innovation basin, slightly above 291
     "SPX (493 primary)": 493,    # SPX separated at 493
     "DXY / XLE / SMH (362)": 362,
@@ -34,6 +35,7 @@ colors = {
     "Uber (206)": "orange",
     "Bitcoin (237)": "tab:green",
     "AMZN (268)": "tab:purple",
+    "NVDA (291)": "tab:cyan",  
     "CAT (308)": "tab:olive",
     "SPX (493 primary)": "tab:blue",  # distinct color for SPX
     "DXY / XLE / SMH (362)": "tab:red",
