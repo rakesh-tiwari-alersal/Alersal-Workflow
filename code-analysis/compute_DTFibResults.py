@@ -209,13 +209,13 @@ def main(argv: Optional[List[str]] = None):
                         help="Minimum long cycle (default 200)")
 
     # ✅ Simplified volatility switch
-    parser.add_argument("-vl", "--vol-low", action="store_true",
-                        help="Include lower short-lags 17,20 in addition to defaults")
+    parser.add_argument("-v", "--volatile", action="store_true",
+                        help="Enable volatile mode: include lower short-lags (17, 20)")
 
     args = parser.parse_args(argv)
 
     # ✅ Default short lags, expand if -vl passed
-    if args.vol_low:
+    if args.volatile:
         short_lags = [17, 20, 23, 25, 27, 31, 36, 41, 47]
     else:
         short_lags = [23, 25, 27, 31, 36, 41, 47]
@@ -240,7 +240,7 @@ def main(argv: Optional[List[str]] = None):
         rows = filter_by_short_lags(rows, short_lags)
         rows = filter_by_min_average(rows, min_average)
         if not rows:
-            print(f"[WARN] No rows for '{sym}' after -vl filter + -ma {min_average}. Skipping.")
+            print(f"[WARN] No rows for '{sym}' after -ma {min_average}. Skipping.")
             continue
 
         topN, _ = score_and_select_topN(rows)
