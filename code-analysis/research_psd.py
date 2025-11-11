@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from scipy.signal import periodogram, find_peaks
 
-# Ranges: final block set to 150–1000 (top 20 there)
+# RANGES: final block set to 150–1000 (top 20 there)
 RANGES = [
     (15, 40),
     (30, 60),
@@ -32,25 +32,36 @@ def analyze_single_range(series, rmin, rmax):
     if len(freq) == 0:
         return None
 
-    periods = 1.0 / freq
-    rmask = (periods >= rmin) & (periods <= rmax)
-    periods = periods[rmask]
-    psd = psd[rmask]
-    if len(psd) == 0:
-        return None
+    # periods for the full (positive-frequency) PSD
+    periods_full = 1.0 / freq
 
+    # find peaks on the full PSD (stable detection)
     try:
-        ht = 0.001 * np.max(psd)
+        # --- thresholding based on long-cycle (> = 100 days) PSD only ---
+        mask_long = periods_full >= 100
+        psd_for_threshold = psd[mask_long] if np.any(mask_long) else psd
+        ht_full = 0.001 * np.max(psd_for_threshold)
+        # --------------------------------------------------------------
     except Exception:
         return None
-    if np.isnan(ht):
+    if np.isnan(ht_full):
+        return None
+    peaks_full, _ = find_peaks(psd, height=ht_full, distance=1)
+    if len(peaks_full) == 0:
         return None
 
-    peaks, _ = find_peaks(psd, height=ht, distance=1)
-    if len(peaks) == 0:
+    # now filter those peaks to the requested range
+    if rmax is None:
+        rmask = (periods_full >= rmin)
+    else:
+        rmask = (periods_full >= rmin) & (periods_full <= rmax)
+
+    # keep only peaks whose periods fall inside rmin..rmax
+    selected = peaks_full[rmask[peaks_full]]
+    if len(selected) == 0:
         return None
 
-    pdf = pd.DataFrame({'Period': periods[peaks], 'Power': psd[peaks]})
+    pdf = pd.DataFrame({'Period': periods_full[selected], 'Power': psd[selected]})
     pdf = pdf.sort_values('Power', ascending=False)
 
     top_n = 20 if (rmin == 150 and rmax == 1000) else 10
@@ -81,30 +92,34 @@ def compute_centroid(series, rmin, rmax=None):
     if len(f) == 0:
         return ""
 
-    periods = 1.0 / f
-    if rmax is None:
-        rm = (periods >= rmin)
-    else:
-        rm = (periods >= rmin) & (periods <= rmax)
-
-    periods = periods[rm]
-    psd = psd[rm]
-    if len(psd) == 0:
-        return ""
+    periods_full = 1.0 / f
 
     try:
-        ht = 0.001 * np.max(psd)
+        # --- thresholding based on long-cycle (> = 100 days) PSD only ---
+        mask_long = periods_full >= 100
+        psd_for_threshold = psd[mask_long] if np.any(mask_long) else psd
+        ht_full = 0.001 * np.max(psd_for_threshold)
+        # --------------------------------------------------------------
     except Exception:
         return ""
-    if np.isnan(ht):
+    if np.isnan(ht_full):
         return ""
 
-    peaks, _ = find_peaks(psd, height=ht, distance=1)
-    if len(peaks) == 0:
+    peaks_full, _ = find_peaks(psd, height=ht_full, distance=1)
+    if len(peaks_full) == 0:
         return ""
 
-    p = periods[peaks]
-    w = psd[peaks]
+    if rmax is None:
+        rm = (periods_full >= rmin)
+    else:
+        rm = (periods_full >= rmin) & (periods_full <= rmax)
+
+    sel = peaks_full[rm[peaks_full]]
+    if len(sel) == 0:
+        return ""
+
+    p = periods_full[sel]
+    w = psd[sel]
     m = (~np.isnan(p)) & (~np.isnan(w)) & (w > 0)
     if not np.any(m):
         return ""
@@ -117,11 +132,11 @@ def compute_centroid(series, rmin, rmax=None):
     c = float(np.sum(p * w) / s)
     return f"{c:.2f}"
 
-def write_all(symbol, c200_800, macro_cutoff, clear):
+def write_all(symbol, c165_500, c200_800, macro_cutoff, upper_half_centroid, clear):
     os.makedirs("research_output", exist_ok=True)
     fn = "research_output/research_psd_ALL.csv"
-    header = ["Symbol", "Centroid_200_800", "MacroCutoff"]
-    row = [symbol, c200_800, macro_cutoff]
+    header = ["Symbol", "Centroid_165_500", "Centroid_200_800", "MacroCutoff", "UpperHalfCentroid"]
+    row = [symbol, c165_500, c200_800, macro_cutoff, upper_half_centroid]
 
     if clear:
         with open(fn, "w", newline="") as f:
@@ -252,7 +267,8 @@ def main():
     pd.DataFrame(rows).to_csv(out, index=False, header=False)
     print(f"Saved {out}")
 
-    # === Centroids for _ALL summary (Centroid_200_800 + MacroCutoff) ===
+    # === Centroids for _ALL summary (Centroid_165_500, Centroid_200_800 + MacroCutoff + UpperHalf) ===
+    c165_500 = compute_centroid(series, 165, 500)
     c200_800 = compute_centroid(series, 200, 800)
 
     # MacroCutoff = centroid over [200, Centroid_200_800]
@@ -262,11 +278,20 @@ def main():
         c_val = None
     macro_cutoff = compute_centroid(series, 200, c_val) if c_val else ""
 
-    # === _ALL summary (ONLY: Symbol, Centroid_200_800, MacroCutoff) ===
+    # UpperHalfCentroid = centroid over [Centroid_200_800, 800] (upper-half of 200_800 centroid)
+    try:
+        ch_val = float(c200_800) if c200_800 not in ("", None) else None
+    except Exception:
+        ch_val = None
+    upper_half_centroid = compute_centroid(series, ch_val, 800) if ch_val else ""
+
+    # === _ALL summary (Symbol, Centroid_165_500, Centroid_200_800, MacroCutoff, UpperHalfCentroid) ===
     write_all(
         name,
-        c200_800,       # Centroid_200_800
-        macro_cutoff,   # MacroCutoff = Centroid[200, Centroid_200_800]
+        c165_500,           # Centroid_165_500
+        c200_800,           # Centroid_200_800
+        macro_cutoff,       # MacroCutoff = Centroid[200, Centroid_200_800]
+        upper_half_centroid,# UpperHalfCentroid = Centroid[Centroid_200_800, 800]
         args.clear_summary
     )
 

@@ -18,7 +18,7 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 
 # === Config ===
-TOP_N = 10
+TOP_N = 20
 YW_R2_SCRIPT = "compute_yw_R2.py"
 HISTORICAL_SUFFIX = ".csv"
 
@@ -258,7 +258,6 @@ def main(argv: Optional[List[str]] = None):
                 "DTFib Hit %": round(float(r.get("DTFib Hit %", 0.0)), 4),
                 "Total Hits": int(r.get("Total Hits", 0)),
                 "% PVS": r.get("% PVS"),
-                "Score": round(float(r.get("Score", 0.0)), 2),
                 "OOS R^2": f"{oos_r2_val:.2f}" if (oos_r2_val is not None) else ""
             }
 
@@ -273,7 +272,7 @@ def main(argv: Optional[List[str]] = None):
 
     fieldnames = [
         "Symbol", "Rank", "Lag (long,short)",
-        "DTFib Hit %", "Total Hits", "% PVS", "Score", "OOS R^2"
+        "DTFib Hit %", "Total Hits", "% PVS", "OOS R^2"
     ]
 
     out_path = os.path.join(os.getcwd(), out_filename)
