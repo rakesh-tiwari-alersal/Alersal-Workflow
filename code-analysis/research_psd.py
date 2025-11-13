@@ -132,11 +132,11 @@ def compute_centroid(series, rmin, rmax=None):
     c = float(np.sum(p * w) / s)
     return f"{c:.2f}"
 
-def write_all(symbol, c165_500, c200_800, macro_cutoff, upper_half_centroid, clear):
+def write_all(symbol, c165_500, c200_800, lower_half_centroid, upper_half_centroid, clear):
     os.makedirs("research_output", exist_ok=True)
     fn = "research_output/research_psd_ALL.csv"
-    header = ["Symbol", "Centroid_165_500", "Centroid_200_800", "MacroCutoff", "UpperHalfCentroid"]
-    row = [symbol, c165_500, c200_800, macro_cutoff, upper_half_centroid]
+    header = ["Symbol", "Centroid_165_500", "Centroid_200_800", "LowerHalfCentroid", "UpperHalfCentroid"]
+    row = [symbol, c165_500, c200_800, lower_half_centroid, upper_half_centroid]
 
     if clear:
         with open(fn, "w", newline="") as f:
@@ -267,16 +267,16 @@ def main():
     pd.DataFrame(rows).to_csv(out, index=False, header=False)
     print(f"Saved {out}")
 
-    # === Centroids for _ALL summary (Centroid_165_500, Centroid_200_800 + MacroCutoff + UpperHalf) ===
+    # === Centroids for _ALL summary (Centroid_165_500, Centroid_200_800 + LowerHalfCentroid + UpperHalf) ===
     c165_500 = compute_centroid(series, 165, 500)
     c200_800 = compute_centroid(series, 200, 800)
 
-    # MacroCutoff = centroid over [200, Centroid_200_800]
+    # LowerHalfCentroid = centroid over [200, Centroid_200_800]
     try:
         c_val = float(c200_800) if c200_800 not in ("", None) else None
     except Exception:
         c_val = None
-    macro_cutoff = compute_centroid(series, 200, c_val) if c_val else ""
+    lower_half_centroid = compute_centroid(series, 200, c_val) if c_val else ""
 
     # UpperHalfCentroid = centroid over [Centroid_200_800, 800] (upper-half of 200_800 centroid)
     try:
@@ -285,13 +285,13 @@ def main():
         ch_val = None
     upper_half_centroid = compute_centroid(series, ch_val, 800) if ch_val else ""
 
-    # === _ALL summary (Symbol, Centroid_165_500, Centroid_200_800, MacroCutoff, UpperHalfCentroid) ===
+    # === _ALL summary (Symbol, Centroid_165_500, Centroid_200_800, LowerHalfCentroid, UpperHalfCentroid) ===
     write_all(
         name,
-        c165_500,           # Centroid_165_500
-        c200_800,           # Centroid_200_800
-        macro_cutoff,       # MacroCutoff = Centroid[200, Centroid_200_800]
-        upper_half_centroid,# UpperHalfCentroid = Centroid[Centroid_200_800, 800]
+        c165_500,            # Centroid_165_500
+        c200_800,            # Centroid_200_800
+        lower_half_centroid, # LowerHalfCentroid = Centroid[200, Centroid_200_800]
+        upper_half_centroid, # UpperHalfCentroid = Centroid[Centroid_200_800, 800]
         args.clear_summary
     )
 
