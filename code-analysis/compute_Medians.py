@@ -6,8 +6,9 @@ Compute median-match counts for odd cycles 17..99 using the *direct median* meth
 
 Now extended with:
 - A 4th column: Bounce-Back
+- Adjustable incoming-move threshold via CLI option -t
 
-Bounce-back definition (final version):
+Bounce-back definition:
 A median match at index t qualifies if:
 
 1) Incoming direction:
@@ -16,18 +17,17 @@ A median match at index t qualifies if:
 2) Incoming move based on 5 bars INCLUDING today:
        win5 = prices[t-4 : t+1]   # last 5 bars: t-4...t
 
-       If direction < 0 (approaching downward):
+       If direction < 0 (came downward):
             incoming_move = (max(win5) - price[t]) / price[t]
 
-       If direction > 0 (approaching upward):
+       If direction > 0 (came upward):
             incoming_move = (price[t] - min(win5)) / price[t]
 
        Must satisfy:
-            incoming_move >= 0.02   (2% relative to today's price)
+            incoming_move >= threshold   (CLI-controlled)
 
 3) Bounce-back next day:
        sign(price[t+1] - price[t]) == -direction
-       (any magnitude allowed)
 """
 
 import argparse
@@ -43,9 +43,9 @@ import pandas as pd
 CYCLES = list(range(17, 100, 2))
 TOL = 1e-4
 
-# Final constants for bounce-back logic
+# Default threshold (CLI can override)
 INCOMING_WINDOW = 5
-INCOMING_THRESHOLD = 0.02
+DEFAULT_THRESHOLD = 0.02
 
 
 def load_price_array(input_path: str) -> np.ndarray:
@@ -71,7 +71,12 @@ def load_price_array(input_path: str) -> np.ndarray:
     )
 
 
-def count_matches_inclusive_median(prices: np.ndarray, cycle: int) -> Tuple[int, int, List[int]]:
+def count_matches_inclusive_median(
+        prices: np.ndarray,
+        cycle: int,
+        threshold: float
+    ) -> Tuple[int, int, List[int]]:
+
     n = len(prices)
     if n < cycle:
         return 0, 0, []
@@ -80,7 +85,7 @@ def count_matches_inclusive_median(prices: np.ndarray, cycle: int) -> Tuple[int,
     bounce_backs = 0
     idxs: List[int] = []
 
-    k = cycle // 2  # middle index for odd-length median
+    k = cycle // 2  # median index
 
     for t in range(cycle - 1, n):
         window = prices[t - cycle + 1 : t + 1]
@@ -96,17 +101,13 @@ def count_matches_inclusive_median(prices: np.ndarray, cycle: int) -> Tuple[int,
             matches += 1
             idxs.append(t)
 
-            # t+1 must exist for bounce-back check
             if t + 1 >= n:
                 continue
 
-            # Determine incoming direction
             incoming_direction = np.sign(prices[t] - prices[t - 1])
             if incoming_direction == 0:
                 continue
 
-            # Need last 5 bars INCLUDING price[t]
-            # That means indices: t-4, t-3, t-2, t-1, t
             if t - (INCOMING_WINDOW - 1) < 0:
                 continue
 
@@ -114,19 +115,19 @@ def count_matches_inclusive_median(prices: np.ndarray, cycle: int) -> Tuple[int,
             if np.isnan(win5).any():
                 continue
 
-            # Compute incoming move magnitude (relative to today's price)
-            if incoming_direction < 0:  # came downward
+            # Incoming move
+            if incoming_direction < 0:  # downward
                 high5 = np.max(win5)
                 incoming_move = (high5 - prices[t]) / prices[t]
-            else:  # incoming_direction > 0, came upward
+            else:  # upward
                 low5 = np.min(win5)
                 incoming_move = (prices[t] - low5) / prices[t]
 
-            # Must meet 2% threshold
-            if incoming_move < INCOMING_THRESHOLD:
+            # Must meet CLI threshold
+            if incoming_move < threshold:
                 continue
 
-            # Bounce-back = next day reversal
+            # Bounce next day
             bounce_direction = np.sign(prices[t + 1] - prices[t])
             if bounce_direction == -incoming_direction:
                 bounce_backs += 1
@@ -134,44 +135,39 @@ def count_matches_inclusive_median(prices: np.ndarray, cycle: int) -> Tuple[int,
     return matches, bounce_backs, idxs
 
 
-def compute_all_cycles(prices: np.ndarray, cycles: List[int]) -> List[Tuple[int, int, int]]:
+def compute_all_cycles(prices: np.ndarray, cycles: List[int], threshold: float) -> List[Tuple[int, int, int]]:
     results = []
+
     for n in cycles:
-        cnt, bnc, _ = count_matches_inclusive_median(prices, n)
+        cnt, bnc, _ = count_matches_inclusive_median(prices, n, threshold)
         results.append((n, cnt, bnc))
-    results.sort(key=lambda x: (-x[1], x[0]))
+
+    # Correct combined sort: Matches DESC → Bounce DESC → Cycle ASC
+    results.sort(key=lambda x: (-x[1], -x[2], x[0]))
     return results
 
 
 def save_results_csv(results: List[Tuple[int, int, int]], out_path: str) -> None:
     df = pd.DataFrame(results, columns=["Cycle Length", "Median Matches", "Bounce-Back"])
     prev = df["Median Matches"].shift(1)
+
     with np.errstate(divide='ignore', invalid='ignore'):
         pct_drop = np.where(prev > 0, (prev - df["Median Matches"]) / prev * 100.0, np.nan)
+
     df["% Drop"] = pd.Series(pct_drop).round().astype("Int64")
 
-    # --------------------------------------------------------
-    # NEW 5th COLUMN: %Bounce = BounceBack / Matches * 100
-    # --------------------------------------------------------
+    # %Bounce
     with np.errstate(divide='ignore', invalid='ignore'):
-        df["%Bounce"] = (df["Bounce-Back"] / df["Median Matches"]) * 100.0  # ← added
-    df["%Bounce"] = df["%Bounce"].round().astype(int)  # ← added
-    # --------------------------------------------------------
+        df["%Bounce"] = (df["Bounce-Back"] / df["Median Matches"]) * 100.0
+    df["%Bounce"] = df["%Bounce"].round().astype(int)
 
-    # Reorder columns (now including the new one)
-    df = df[[
-        "Cycle Length",
-        "Median Matches",
-        "% Drop",
-        "Bounce-Back",
-        "%Bounce"                  # ← added
-    ]]
-
+    df = df[["Cycle Length", "Median Matches", "% Drop", "Bounce-Back", "%Bounce"]]
     df.to_csv(out_path, index=False)
 
 
 def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
+
     parser = argparse.ArgumentParser(
         description="Compute median matches (inclusive median) for odd cycles 17..99."
     )
@@ -179,6 +175,13 @@ def main(argv=None):
         '-f', '--file', required=True,
         help="Input CSV filename in ./historical_data/ (e.g. BTC-USD.csv)"
     )
+    parser.add_argument(
+        '-t', '--threshold',
+        type=float,
+        default=DEFAULT_THRESHOLD,
+        help="Incoming-move threshold (default: 0.02)"
+    )
+
     args = parser.parse_args(argv)
 
     input_path = Path('historical_data') / args.file
@@ -192,7 +195,8 @@ def main(argv=None):
         print(f"Error loading price series: {e}")
         sys.exit(3)
 
-    results = compute_all_cycles(prices, CYCLES)
+    # Compute with CLI threshold
+    results = compute_all_cycles(prices, CYCLES, args.threshold)
 
     out_dir = Path('research_output')
     out_dir.mkdir(parents=True, exist_ok=True)
