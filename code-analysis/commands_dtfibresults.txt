@@ -1,0 +1,10 @@
+python .\compute_DTFibResults.py -s BTC-USD -v
+python .\compute_DTFibResults.py -s CLF -v
+python .\compute_DTFibResults.py -s GCF 
+python .\compute_DTFibResults.py -s GSPC 
+python .\compute_DTFibResults.py -s Roku
+python .\compute_DTFibResults.py -s Uber
+python .\compute_DTFibResults.py -s XLE
+python .\compute_DTFibResults.py -s CAT
+python .\compute_DTFibResults.py -s AMZN
+python .\compute_DTFibResults.py -s NVDA
