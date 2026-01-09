@@ -1,10 +1,10 @@
 python .\compute_DTFibResults.py -s BTC-USD -v
-python .\compute_DTFibResults.py -s CLF -v
-python .\compute_DTFibResults.py -s GCF 
-python .\compute_DTFibResults.py -s GSPC 
-python .\compute_DTFibResults.py -s Roku
-python .\compute_DTFibResults.py -s Uber
-python .\compute_DTFibResults.py -s XLE
-python .\compute_DTFibResults.py -s CAT
-python .\compute_DTFibResults.py -s AMZN
-python .\compute_DTFibResults.py -s NVDA
+python .\compute_DTFibResults.py -s CLF -ma 385 -v
+python .\compute_DTFibResults.py -s GCF -ma 385
+python .\compute_DTFibResults.py -s GSPC -ma 385
+python .\compute_DTFibResults.py -s Roku -v
+python .\compute_DTFibResults.py -s Uber -v 
+python .\compute_DTFibResults.py -s XLE -ma 385
+python .\compute_DTFibResults.py -s CAT -ma 291
+python .\compute_DTFibResults.py -s AMZN -ma 291
+python .\compute_DTFibResults.py -s NVDA -ma 291
