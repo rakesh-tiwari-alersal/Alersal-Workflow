@@ -22,7 +22,7 @@ TOP_N = 20
 YW_R2_SCRIPT = "compute_yw_R2.py"
 HISTORICAL_SUFFIX = ".csv"
 
-HIT_WEIGHT: float = 0.75
+HIT_WEIGHT: float = 0.80
 PHASE_WEIGHT: float = 1.0 - HIT_WEIGHT
 # ==============
 
@@ -216,9 +216,9 @@ def main(argv: Optional[List[str]] = None):
 
     # ✅ Default short lags, expand if -vl passed
     if args.volatile:
-        short_lags = [17, 20, 23, 25, 27, 31, 36, 41, 47]
+        short_lags = [17, 20, 23, 27, 31, 36, 41, 47]
     else:
-        short_lags = [23, 25, 27, 31, 36, 41, 47]
+        short_lags = [23, 27, 31, 36, 41, 47]
 
     min_average = args.min_average
 

@@ -67,7 +67,7 @@ def main():
         sys.exit(2)
 
     # Always use all short-term cycles (full universe)
-    short_lags = [17, 20, 23, 25, 27, 31, 36, 41, 47]
+    short_lags = [17, 20, 23, 27, 31, 36, 41, 47]
 
     # Full long-term lags table (complete set)
     all_long_lags = [
