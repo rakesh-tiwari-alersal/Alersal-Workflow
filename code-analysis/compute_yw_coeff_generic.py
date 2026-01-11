@@ -1,122 +1,143 @@
-#!/usr/bin/env python3
-
 import argparse
-import csv
-import sys
-import numpy as np
 import pandas as pd
-from pathlib import Path
+import os
+import numpy as np
 
 
-# ---------------------------------------------------------------------
-# Plastic cycle table (unchanged)
-# ---------------------------------------------------------------------
+def yule_walker_solver(series, order):
+    """
+    Solves the Yule-Walker equations to find the autoregressive coefficients.
+    """
+    n = len(series)
+    if n <= order:
+        return np.array([])
 
-TABLE_CYCLES = [
-    179, 183, 189, 196, 202, 206, 220, 237,
-    243, 250, 260, 268, 273, 291, 308, 314,
-    322, 331, 345, 355, 362, 368, 385, 403,
-    408, 416, 426, 439, 457, 470, 480, 487,
-    493, 510, 528, 534, 541, 551, 564, 582,
-    605, 622, 636, 645, 653, 659, 676
-]
+    autocov = np.zeros(order + 1)
+    for lag in range(order + 1):
+        autocov[lag] = np.sum(series[lag:] * series[:n - lag]) / n
 
-# ---------------------------------------------------------------------
-# NEW: nearest plastic anchors (annotation only)
-# ---------------------------------------------------------------------
+    if autocov[0] == 0:
+        return np.zeros(order)
 
-def nearest_plastic_cycles(lag, table_cycles):
-    lower = max((c for c in table_cycles if c <= lag), default=None)
-    upper = min((c for c in table_cycles if c >= lag), default=None)
+    R = np.zeros((order, order))
+    r = autocov[1:]
+
+    for i in range(order):
+        for j in range(order):
+            R[i, j] = autocov[abs(i - j)]
+
+    try:
+        phi = np.linalg.solve(R, r)
+    except np.linalg.LinAlgError:
+        print("Warning: Could not solve Yule-Walker equations. Matrix is singular.")
+        return np.zeros(order)
+
+    return phi
+
+
+def nearest_plastic_cycles(lag, table):
+    lower = max((c for c in table if c <= lag), default=None)
+    upper = min((c for c in table if c >= lag), default=None)
     return lower, upper
 
 
-# ---------------------------------------------------------------------
-# Core Yule–Walker logic (unchanged)
-# ---------------------------------------------------------------------
-
-def compute_yw_coeffs(series, max_lag):
-    from statsmodels.regression.linear_model import yule_walker
-    rho, _ = yule_walker(series, order=max_lag, method="mle")
-    return rho
-
-
-# ---------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------
-
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-f", "--file", required=True, help="CSV file")
-    parser.add_argument("-r", "--range", nargs=2, type=int, help="Lag range")
-    parser.add_argument("-d", "--dominant", type=int, help="Dominant short cycle")
-    parser.add_argument(
-        "-p", "--plastic", action="store_true",
-        help="Restrict display to plastic cycles only"
+    TABLE_CYCLES = [
+        179, 183, 189, 196, 202, 206, 220, 237,
+        243, 250, 260, 268, 273, 291, 308, 314,
+        322, 331, 345, 355, 362, 368, 385, 403,
+        408, 416, 426, 439, 457, 470, 480, 487,
+        493, 510, 528, 534, 541, 551, 564, 582,
+        605, 622, 636, 645, 653, 659, 676
+    ]
+
+    parser = argparse.ArgumentParser(
+        description="Generate Yule-Walker coefficients (plastic-aligned annotation for Top-3 only)."
     )
+
+    parser.add_argument("-f", "--file", required=True)
+    parser.add_argument("-p", "--plastic_cycles", action="store_true")
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("-b", "--base", type=int)
+    group.add_argument("-r", nargs=2, metavar=("BEGIN", "END"), type=int)
+
+    parser.add_argument("-d", "--differencing_lag", type=int, default=1)
 
     args = parser.parse_args()
 
-    input_path = Path("historical_data") / args.file
-    if not input_path.exists():
-        print(f"Error: input file not found: {input_path}")
-        sys.exit(2)
+    file_path = os.path.join("historical_data", args.file)
 
-    df = pd.read_csv(input_path)
-    prices = df["close"].values
-
-    max_lag = args.range[1] if args.range else 700
-    coeffs = compute_yw_coeffs(prices, max_lag)
-
-    # Build lag → coefficient map
-    results = {
-        lag + 1: coeffs[lag]
-        for lag in range(len(coeffs))
-        if (not args.range or args.range[0] <= lag + 1 <= args.range[1])
-    }
-
-    # Display filter (UNCHANGED behavior)
-    if args.plastic:
-        display_results = {
-            lag: coef for lag, coef in results.items()
-            if lag in TABLE_CYCLES
-        }
-    else:
-        display_results = results
-
-    if not display_results:
-        print("No lags to display.")
+    try:
+        df = pd.read_csv(file_path)
+        series = df.iloc[:, 6].dropna()
+    except Exception as e:
+        print(f"Error loading data: {e}")
         return
 
-    # Rank by absolute coefficient (UNCHANGED)
-    sorted_lags = sorted(
-        display_results.keys(),
-        key=lambda k: abs(display_results[k]),
-        reverse=True
-    )
+    differenced = series.diff(periods=args.differencing_lag).dropna()
 
-    top_3_lags = sorted_lags[:3]
+    # Select lags
+    if args.base is not None:
+        base = args.base
+        lags_to_compute = [
+            c for c in TABLE_CYCLES
+            if base - 54 <= c <= base + 54
+        ]
+        if not lags_to_compute:
+            print(f"No TABLE cycles found within ±54 of base {base}.")
+            return
+    else:
+        begin, end = args.r
+        if begin > end:
+            print("Error: BEGIN must be <= END.")
+            return
+        lags_to_compute = list(range(begin, end + 1))
 
-    print("\nSummary: 3 Most Significant Lags (by absolute coefficient):")
-    for lag in top_3_lags:
-        coef = display_results[lag]
+    ar_order = max(lags_to_compute)
+    coeffs = yule_walker_solver(differenced, ar_order)
 
-        # NEW: annotation only
-        if lag < TABLE_CYCLES[0]:
-            anchor = ""
-        else:
-            lower, upper = nearest_plastic_cycles(lag, TABLE_CYCLES)
+    if len(coeffs) == 0:
+        print("Could not compute coefficients.")
+        return
 
-            if lower is not None and upper is not None and lower != upper:
-                anchor = f"({lower}, {upper})"
-            elif lower is not None:
-                anchor = f"({lower})"
-            elif upper is not None:
-                anchor = f"({upper})"
+    results = {
+        lag: coeffs[lag - 1]
+        for lag in lags_to_compute
+        if lag - 1 < len(coeffs)
+    }
+
+    # Apply plastic display filter ONLY if -p is supplied
+    if args.plastic_cycles:
+        results = {k: v for k, v in results.items() if k in TABLE_CYCLES}
+
+    # ---- OUTPUT ----
+
+    print("\nYule-Walker Coefficients:\n")
+    for lag, coef in sorted(results.items()):
+        print(f"Lag {lag}: {coef:.6f}")
+
+    # ---- TOP 3 SIGNIFICANT ----
+
+    if results:
+        top3 = sorted(results, key=lambda k: abs(results[k]), reverse=True)[:3]
+
+        print("\nSummary: 3 Most Significant Lags:")
+        for lag in top3:
+            coef = results[lag]
+
+            # Plastic annotation ONLY when -p is NOT supplied
+            if not args.plastic_cycles:
+                lower, upper = nearest_plastic_cycles(lag, TABLE_CYCLES)
+                if lower is not None and upper is not None:
+                    print(f"Lag {lag} ({lower},{upper}) : {coef:.6f}")
+                elif lower is not None:
+                    print(f"Lag {lag} ({lower}) : {coef:.6f}")
+                else:
+                    print(f"Lag {lag}: {coef:.6f}")
             else:
-                anchor = ""
+                print(f"Lag {lag}: {coef:.6f}")
 
-        print(f"Lag {lag} {anchor}: {coef:.6f}")
 
 if __name__ == "__main__":
     main()
