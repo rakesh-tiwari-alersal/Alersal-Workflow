@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-DTFib-only selection script (no R², per-symbol output)
-
+DTFib-only selection script
 - Accepts symbols via -s/--symbols (comma-separated).
 - Reads merged DTFib results produced by compute_DTFib_N_wrapper.py.
 - Produces ONE output CSV PER SYMBOL.
-- Output files are written into the current working directory.
+- Output files are written into the DTFibRuns/ directory.
 - Scoring uses HIT vs PHASE weights.
 """
 
@@ -113,7 +112,7 @@ def build_rows_from_dtfib(dt_rows: List[Dict[str, str]]) -> List[Dict[str, Any]]
     return results
 
 
-def filter_by_min_average(rows: List[Dict[str, Any]], min_average: int) -> List[Dict[str, Any]]:
+def filter_by_cutoff(rows: List[Dict[str, Any]], cutoff: int) -> List[Dict[str, Any]]:
     out = []
     for r in rows:
         lag = r.get("Lag (long,short)")
@@ -121,7 +120,7 @@ def filter_by_min_average(rows: List[Dict[str, Any]], min_average: int) -> List[
             continue
         try:
             long_part = int(lag.split(",")[0].strip())
-            if long_part >= min_average:
+            if long_part >= cutoff:
                 out.append(r)
         except Exception:
             continue
@@ -201,7 +200,7 @@ def main(argv: Optional[List[str]] = None):
     )
 
     parser.add_argument(
-        "-ma", "--min-average",
+        "-ma", "--cutoff",
         nargs="?",
         const=200,
         type=int,
@@ -238,7 +237,7 @@ def main(argv: Optional[List[str]] = None):
 
         rows = build_rows_from_dtfib(dt_rows)
         rows = filter_by_short_lags(rows, short_lags)
-        rows = filter_by_min_average(rows, args.min_average)
+        rows = filter_by_cutoff(rows, args.cutoff)
 
         if not rows:
             print(f"[WARN] No valid rows for '{sym}'. Skipping.")
