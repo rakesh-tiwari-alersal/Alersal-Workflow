@@ -2,206 +2,187 @@
 """
 compute_DTFib_N_wrapper.py
 
-Orchestrates multiple sliced executions of compute_DTFib_N.py on the same
-historical dataset, then merges results using merge_DTFib.py.
+Wrapper to run compute_DTFib_N.py on multiple temporal slices
+and merge results via merge_DTFib.py.
 
-Slices applied to number of rows (rounded up):
-  1) 10% -> 100%
-  2) 25% -> 100%
-  3) 10% -> 95%
+Slicing strategy (conditional by record count):
+
+Always:
+  Run 1: 10% -> 100%
+
+Run 2: 20% -> 100%
+  - Only if total_rows <= 8000
+  - Skipped if 2500 <= total_rows <= 3000
+
+If total_rows >= 2500 (~10y):
+  Run 3: 30% -> 100%
+
+If total_rows > 5000 (~20y):
+  Run 4: 40% -> 100%
+
+If total_rows > 8000 (~32y):
+  Run 5: 50% -> 100%
 
 Design principles:
 - DO NOT modify compute_DTFib.py
 - DO NOT modify compute_DTFib_N.py
 - DO NOT modify merge_DTFib.py
-- All scripts are assumed to live in the invocation directory
 - Wrapper absorbs all path / staging complexity
-- DTFibRuns directory is ALWAYS preserved (manual cleanup only)
 """
 
-from __future__ import annotations
 import argparse
+import csv
+import math
+import os
 import subprocess
 import sys
-import os
-import math
+from pathlib import Path
 import shutil
-import pandas as pd
-from typing import List
 
 
 # ---------------------------------------------------------------------
-# Invocation directory (where all .py scripts live)
+# Invocation directory (where all engine scripts live)
 # ---------------------------------------------------------------------
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = Path(__file__).resolve().parent
 
 ENGINE_SCRIPTS = [
     "compute_DTFib.py",
     "compute_DTFib_N.py",
 ]
 
-MERGE_SCRIPT = os.path.join(BASE_DIR, "merge_DTFib.py")
-
-RUN_ROOT = "DTFibRuns"
-
-
-# ---------------------------------------------------------------------
-# Slice definitions
-# ---------------------------------------------------------------------
-
-SLICE_SPECS = [
-    ("run_10_100", 0.10, 1.00),
-    ("run_25_100", 0.25, 1.00),
-    ("run_10_95",  0.10, 0.95),
-]
+MERGE_SCRIPT = BASE_DIR / "merge_DTFib.py"
 
 
 # ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
 
-def slice_dataframe(df: pd.DataFrame, start_frac: float, end_frac: float) -> pd.DataFrame:
-    """Slice dataframe by fractional row indices (rounded up)."""
-    n = len(df)
-    start_idx = int(math.ceil(n * start_frac))
-    end_idx = int(math.ceil(n * end_frac))
-    end_idx = min(end_idx, n)
-    return df.iloc[start_idx:end_idx].copy()
+def read_row_count(csv_path: Path) -> int:
+    with open(csv_path, "r", encoding="utf-8") as f:
+        return sum(1 for _ in f) - 1  # exclude header
 
 
-def stage_engine_scripts(run_dir: str) -> None:
-    """
-    Copy required engine scripts into the run directory so that
-    downstream subprocess calls using relative paths succeed.
-    """
+def slice_csv(src: Path, dst: Path, start_frac: float) -> None:
+    with open(src, "r", encoding="utf-8") as fin:
+        rows = list(csv.reader(fin))
+
+    header = rows[0]
+    data = rows[1:]
+
+    total = len(data)
+    start_idx = math.ceil(total * start_frac)
+    sliced = data[start_idx:]
+
+    with open(dst, "w", newline="", encoding="utf-8") as fout:
+        writer = csv.writer(fout)
+        writer.writerow(header)
+        writer.writerows(sliced)
+
+
+def stage_engine_scripts(run_dir: Path) -> None:
+    """Copy engine scripts into run directory (once)."""
     for script in ENGINE_SCRIPTS:
-        src = os.path.join(BASE_DIR, script)
-        dst = os.path.join(run_dir, script)
-        if not os.path.isfile(dst):
+        src = BASE_DIR / script
+        dst = run_dir / script
+        if not dst.exists():
             shutil.copy2(src, dst)
-
-
-def run_compute_dtfib_n(
-    run_dir: str,
-    filename: str,
-    tolerance: float
-) -> None:
-    """Invoke compute_DTFib_N.py inside the run directory."""
-    cmd = [
-        sys.executable,
-        "compute_DTFib_N.py",
-        "-f", filename,
-        "-t", str(tolerance),
-    ]
-    subprocess.run(cmd, cwd=run_dir, check=True)
-
-
-def run_merge(
-    run_dirs: List[str],
-    symbol: str,
-    out_dir: str
-) -> None:
-    """Invoke merge_DTFib.py from the base directory."""
-    cmd = [
-        sys.executable,
-        MERGE_SCRIPT,
-        "-d", ",".join(run_dirs),
-        "-s", symbol,
-        "-o", out_dir
-    ]
-    subprocess.run(cmd, check=True)
 
 
 # ---------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------
 
-def main(argv: List[str] | None = None):
-    parser = argparse.ArgumentParser(
-        description="Run compute_DTFib_N.py across multiple data slices and merge results."
-    )
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", "--file", required=True, help="CSV filename (symbol.csv)")
+    parser.add_argument("-o", "--out", default="DTFibRuns", help="Output root directory")
 
-    # ---- Required input ----
-    parser.add_argument(
-        "-f", "--file",
-        required=True,
-        help="Historical CSV filename in historical_data/ (e.g. Roku.csv)"
-    )
+    # Passthrough args (DO NOT change defaults)
+    parser.add_argument("-t", type=float)
+    parser.add_argument("-ma", type=float)
+    parser.add_argument("-v", action="store_true")
 
-    # ---- compute_DTFib_N.py CLI passthrough ----
-    parser.add_argument(
-        "-t", "--tolerance",
-        type=float,
-        default=0.0075,
-        help="Tolerance for Fibonacci matching (default: 0.0075)"
-    )
+    args, unknown = parser.parse_known_args()
 
-    # ---- merge_DTFib.py CLI ----
-    parser.add_argument(
-        "-o", "--out",
-        default=os.path.join(RUN_ROOT, "merged"),
-        help="Output directory for merged results (default: DTFibRuns/merged)"
-    )
+    data_path = Path("historical_data") / args.file
+    if not data_path.exists():
+        raise FileNotFoundError(f"Data file not found: {data_path}")
 
-    args = parser.parse_args(argv)
+    symbol = Path(args.file).stem
+    total_rows = read_row_count(data_path)
+
+    print(f"[INFO] {symbol}: total rows = {total_rows}")
 
     # -----------------------------------------------------------------
-    # Validate input data
+    # Build slice plan (UNCHANGED logic)
     # -----------------------------------------------------------------
 
-    data_path = os.path.join("historical_data", args.file)
-    if not os.path.isfile(data_path):
-        print(f"[ERROR] File not found: {data_path}", file=sys.stderr)
-        sys.exit(2)
+    slice_plan = [("run_10_100", 0.10)]
 
-    symbol = os.path.splitext(os.path.basename(args.file))[0]
-    df = pd.read_csv(data_path)
+    if total_rows <= 8000 and not (2500 <= total_rows <= 3000):
+        slice_plan.append(("run_20_100", 0.20))
 
-    # -----------------------------------------------------------------
-    # Prepare run root (ALWAYS preserved)
-    # -----------------------------------------------------------------
+    if total_rows >= 2500:
+        slice_plan.append(("run_30_100", 0.30))
 
-    os.makedirs(RUN_ROOT, exist_ok=True)
+    if total_rows > 5000:
+        slice_plan.append(("run_40_100", 0.40))
 
-    run_dirs: List[str] = []
+    if total_rows > 8000:
+        slice_plan.append(("run_50_100", 0.50))
 
     # -----------------------------------------------------------------
-    # Execute slice runs
+    # Execute runs
     # -----------------------------------------------------------------
 
-    for run_name, start_frac, end_frac in SLICE_SPECS:
-        run_dir = os.path.join(RUN_ROOT, run_name)
-        hist_dir = os.path.join(run_dir, "historical_data")
+    out_root = Path(args.out)
+    out_root.mkdir(exist_ok=True)
 
-        os.makedirs(hist_dir, exist_ok=True)
+    run_dirs = []
 
-        # Stage engine scripts
+    for run_name, frac in slice_plan:
+        run_dir = out_root / run_name / symbol
+        hist_dir = run_dir / "historical_data"
+
+        hist_dir.mkdir(parents=True, exist_ok=True)
         stage_engine_scripts(run_dir)
 
-        # Slice data
-        df_slice = slice_dataframe(df, start_frac, end_frac)
-        df_slice.to_csv(os.path.join(hist_dir, args.file), index=False)
+        sliced_csv = hist_dir / f"{symbol}.csv"
+        slice_csv(data_path, sliced_csv, frac)
 
-        print(f"[INFO] Running {run_name}: rows={len(df_slice)}")
+        print(f"[INFO] {run_name}: using last {int((1 - frac) * 100)}% of data")
 
-        run_compute_dtfib_n(
-            run_dir=run_dir,
-            filename=args.file,
-            tolerance=args.tolerance
-        )
+        cmd = [
+            sys.executable,
+            "compute_DTFib_N.py",
+            "-f", f"{symbol}.csv",
+        ]
 
+        if args.t is not None:
+            cmd += ["-t", str(args.t)]
+        if args.ma is not None:
+            cmd += ["-ma", str(args.ma)]
+        if args.v:
+            cmd.append("-v")
+
+        cmd += unknown
+
+        subprocess.check_call(cmd, cwd=run_dir)
         run_dirs.append(run_dir)
 
     # -----------------------------------------------------------------
     # Merge results
     # -----------------------------------------------------------------
 
-    run_merge(
-        run_dirs=run_dirs,
-        symbol=symbol,
-        out_dir=args.out
-    )
+    merge_cmd = [
+        sys.executable,
+        str(MERGE_SCRIPT),
+        "-s", symbol,
+        "-o", args.out,
+    ]
+
+    subprocess.check_call(merge_cmd)
 
     print("\n[DONE]")
     print("Merged results written to:")

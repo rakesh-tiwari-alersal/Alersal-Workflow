@@ -7,7 +7,7 @@ from datetime import datetime, date, timedelta
 
 # Handle command-line arguments
 start_year = 1990
-end_year = 2024
+end_year = 2025
 
 if len(sys.argv) == 3:
     try:
@@ -104,6 +104,7 @@ def download_instrument_data(ticker, instrument_name, start_date, end_date):
         data['ticker'] = ticker
         data['instrument'] = instrument_name
         data = data[['Date', 'ticker', 'instrument', 'open', 'high', 'low', 'close', 'volume']]
+        data[['open', 'high', 'low', 'close']] = data[['open', 'high', 'low', 'close']].round(2)
         
         # Save to CSV
         data.to_csv(filepath, index=False)
