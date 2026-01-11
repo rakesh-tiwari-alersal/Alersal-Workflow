@@ -26,7 +26,7 @@ TOP_N = 20
 HIT_WEIGHT: float = 0.75
 PHASE_WEIGHT: float = 1.0 - HIT_WEIGHT
 
-DTFIB_ROOT = os.path.join("DTFibRuns", "merged", "DTFib_results")
+DTFIB_ROOT = os.path.join("DTFibRuns", "DTFib_results")
 
 
 # ==========================================================
@@ -247,7 +247,7 @@ def main(argv: Optional[List[str]] = None):
         topN = score_and_select_topN(rows)
 
         out_filename = f"DTFib_Results_{sym}.csv"
-        out_path = os.path.join(os.path.dirname(os.path.dirname(DTFIB_ROOT)), out_filename)
+        out_path = os.path.join("DTFibRuns", out_filename)
 
         with open(out_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(
