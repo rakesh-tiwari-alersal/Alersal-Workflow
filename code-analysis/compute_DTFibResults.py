@@ -200,7 +200,7 @@ def main(argv: Optional[List[str]] = None):
     )
 
     parser.add_argument(
-        "-ma", "--cutoff",
+        "-c", "--cutoff",
         nargs="?",
         const=200,
         type=int,
