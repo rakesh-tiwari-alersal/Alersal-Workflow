@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import sys
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -12,12 +13,13 @@ from pathlib import Path
 # ---------------------------------------------------------------------
 
 TABLE_CYCLES = [
-    179, 183, 189, 196, 202, 206, 220, 237, 243, 250, 260, 268,
-    273, 291, 308, 314, 322, 331, 345, 355, 362, 368, 385, 403,
-    408, 416, 426, 439, 457, 470, 480, 487, 493, 510, 528, 534,
-    541, 551, 564, 582, 605, 622, 636, 645, 653, 659, 676
+    179, 183, 189, 196, 202, 206, 220, 237,
+    243, 250, 260, 268, 273, 291, 308, 314,
+    322, 331, 345, 355, 362, 368, 385, 403,
+    408, 416, 426, 439, 457, 470, 480, 487,
+    493, 510, 528, 534, 541, 551, 564, 582,
+    605, 622, 636, 645, 653, 659, 676
 ]
-
 
 # ---------------------------------------------------------------------
 # NEW: nearest plastic anchors (annotation only)
@@ -55,7 +57,12 @@ def main():
 
     args = parser.parse_args()
 
-    df = pd.read_csv(args.file)
+    input_path = Path("historical_data") / args.file
+    if not input_path.exists():
+        print(f"Error: input file not found: {input_path}")
+        sys.exit(2)
+
+    df = pd.read_csv(input_path)
     prices = df["close"].values
 
     max_lag = args.range[1] if args.range else 700
@@ -95,19 +102,21 @@ def main():
         coef = display_results[lag]
 
         # NEW: annotation only
-        lower, upper = nearest_plastic_cycles(lag, TABLE_CYCLES)
-
-        if lower is not None and upper is not None and lower != upper:
-            anchor = f"({lower}, {upper})"
-        elif lower is not None:
-            anchor = f"({lower})"
-        elif upper is not None:
-            anchor = f"({upper})"
-        else:
+        if lag < TABLE_CYCLES[0]:
             anchor = ""
+        else:
+            lower, upper = nearest_plastic_cycles(lag, TABLE_CYCLES)
+
+            if lower is not None and upper is not None and lower != upper:
+                anchor = f"({lower}, {upper})"
+            elif lower is not None:
+                anchor = f"({lower})"
+            elif upper is not None:
+                anchor = f"({upper})"
+            else:
+                anchor = ""
 
         print(f"Lag {lag} {anchor}: {coef:.6f}")
-
 
 if __name__ == "__main__":
     main()
