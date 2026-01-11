@@ -192,14 +192,14 @@ def main():
     # -----------------------------------------------------------------
     # Merge results (FIXED)
     # -----------------------------------------------------------------
-
+    dirs_arg = ",".join(str(d) for d in run_dirs)
     merge_cmd = [
         sys.executable,
         str(MERGE_SCRIPT),
         "-s", symbol,
         "-o", args.out,
-        "-d",
-    ] + [str(d) for d in run_dirs]
+        "-d", dirs_arg,
+    ]
 
     subprocess.check_call(merge_cmd)
 
