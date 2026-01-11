@@ -63,7 +63,18 @@ def read_row_count(csv_path: Path) -> int:
         return sum(1 for _ in f) - 1  # exclude header
 
 
-def slice_csv(src: Path, dst: Path, start_frac: float) -> None:
+def get_start_year(csv_path: Path, start_idx: int) -> str:
+    """Return YYYY of the first row used in the slice."""
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader)  # header
+        for i, row in enumerate(reader):
+            if i == start_idx:
+                return row[0][:4]
+    return "?"
+
+
+def slice_csv(src: Path, dst: Path, start_frac: float) -> str:
     with open(src, "r", encoding="utf-8") as fin:
         rows = list(csv.reader(fin))
 
@@ -74,10 +85,14 @@ def slice_csv(src: Path, dst: Path, start_frac: float) -> None:
     start_idx = math.ceil(total * start_frac)
     sliced = data[start_idx:]
 
+    start_year = get_start_year(src, start_idx)
+
     with open(dst, "w", newline="", encoding="utf-8") as fout:
         writer = csv.writer(fout)
         writer.writerow(header)
         writer.writerows(sliced)
+
+    return start_year
 
 
 def stage_engine_scripts(run_dir: Path) -> None:
@@ -149,9 +164,12 @@ def main():
         stage_engine_scripts(run_dir)
 
         sliced_csv = hist_dir / f"{symbol}.csv"
-        slice_csv(data_path, sliced_csv, frac)
+        start_year = slice_csv(data_path, sliced_csv, frac)
 
-        print(f"[INFO] {run_name}: using last {int((1 - frac) * 100)}% of data")
+        print(
+            f"[INFO] {run_name}: using last {int((1 - frac) * 100)}% of data "
+            f"({start_year} onwards)"
+        )
 
         cmd = [
             sys.executable,
@@ -172,7 +190,7 @@ def main():
         run_dirs.append(run_dir)
 
     # -----------------------------------------------------------------
-    # Merge results
+    # Merge results (FIXED)
     # -----------------------------------------------------------------
 
     merge_cmd = [
@@ -180,7 +198,8 @@ def main():
         str(MERGE_SCRIPT),
         "-s", symbol,
         "-o", args.out,
-    ]
+        "-d",
+    ] + [str(d) for d in run_dirs]
 
     subprocess.check_call(merge_cmd)
 
