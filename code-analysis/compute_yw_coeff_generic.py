@@ -82,10 +82,10 @@ def main():
         base = args.base
         lags_to_compute = [
             c for c in TABLE_CYCLES
-            if base - 54 <= c <= base + 54
+            if base - 31 <= c <= base + 31
         ]
         if not lags_to_compute:
-            print(f"No TABLE cycles found within ±54 of base {base}.")
+            print(f"No TABLE cycles found within ±31 of base {base}.")
             return
     else:
         begin, end = args.r
