@@ -7,22 +7,6 @@ and merge results via merge_DTFib.py.
 
 Slicing strategy (conditional by record count):
 
-Always:
-  Run 1: 10% -> 100%
-
-Run 2: 20% -> 100%
-  - Only if total_rows <= 8000
-  - Skipped if 2500 <= total_rows <= 3000
-
-If total_rows >= 2500 (~10y):
-  Run 3: 30% -> 100%
-
-If total_rows > 5000 (~20y):
-  Run 4: 40% -> 100%
-
-If total_rows > 8000 (~32y):
-  Run 5: 50% -> 100%
-
 Design principles:
 - DO NOT modify compute_DTFib.py
 - DO NOT modify compute_DTFib_N.py
@@ -134,9 +118,7 @@ def main():
     # -----------------------------------------------------------------
 
     slice_plan = [("run_10_100", 0.10)]
-
-    if total_rows <= 8000 and not (2500 <= total_rows <= 3000):
-        slice_plan.append(("run_20_100", 0.20))
+    slice_plan.append(("run_20_100", 0.20))
 
     if total_rows >= 2500:
         slice_plan.append(("run_30_100", 0.30))
@@ -144,8 +126,11 @@ def main():
     if total_rows > 5000:
         slice_plan.append(("run_40_100", 0.40))
 
-    if total_rows > 8000:
+    if total_rows > 7500:
         slice_plan.append(("run_50_100", 0.50))
+
+    if total_rows > 10000:
+        slice_plan.append(("run_60_100", 0.60))
 
     # -----------------------------------------------------------------
     # Execute runs
