@@ -120,16 +120,16 @@ def main():
     slice_plan = [("run_10_100", 0.10)]
     slice_plan.append(("run_20_100", 0.20))
 
-    if total_rows >= 2500:
+    if total_rows >= 2000:
         slice_plan.append(("run_30_100", 0.30))
 
-    if total_rows > 5000:
+    if total_rows > 4000:
         slice_plan.append(("run_40_100", 0.40))
 
-    if total_rows > 7500:
+    if total_rows > 6000:
         slice_plan.append(("run_50_100", 0.50))
 
-    if total_rows > 10000:
+    if total_rows > 8000:
         slice_plan.append(("run_60_100", 0.60))
 
     # -----------------------------------------------------------------
