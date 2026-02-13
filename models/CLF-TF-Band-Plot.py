@@ -28,8 +28,13 @@ EQUILIBRIUM_FRAME = 1326
 
 X_TICK_MODE = "Q"   # "Q" = quarterly, "Y" = yearly
 
-BAND_ABOVE = 0.1459
-BAND_BELOW = 0.1459
+# ENTRY bands (renamed)
+BAND_SHORT_ENTRY = 0.1459
+BAND_LONG_ENTRY  = 0.1459
+
+# EXIT bands (optional; None → defaults to equilibrium)
+BAND_SHORT_EXIT = 0.0344
+BAND_LONG_EXIT  = None
 
 FPS = 24
 POLY_ORDER = 3
@@ -37,10 +42,11 @@ POLY_ORDER = 3
 # -----------------------------
 # COLORS
 # -----------------------------
-COLOR_EQ    = "#4FC3F7"
-COLOR_UPPER = "#2ECC71"
-COLOR_LOWER = "#F11B1BEF"
-COLOR_PRICE = "#CFCFCF"
+COLOR_EQ     = "#4FC3F7"
+COLOR_UPPER  = "#2ECC71"
+COLOR_LOWER  = "#F11B1BEF"
+COLOR_EXIT   = "#9E9E9E"
+COLOR_PRICE  = "#CFCFCF"
 
 # -----------------------------
 # LOAD DATA (CSV, ROBUST)
@@ -112,12 +118,13 @@ ax.set_facecolor("black")
 # STATE + MARKERS
 # -----------------------------
 position = None
+last_flat_idx = 0
 long_entries  = []
 short_entries = []
 exits = []   # (date, price, color)
 
 def update(frame_idx):
-    global position
+    global position, last_flat_idx
 
     ax.clear()
     ax.set_facecolor("black")
@@ -138,43 +145,54 @@ def update(frame_idx):
             color=COLOR_EQ, linewidth=2.0,
             label="TF-Band Equilibrium")
 
-    # 🔵 Restored equilibrium end knob
+    # Equilibrium end knob
     ax.scatter(d[DATE_COL].iloc[-1], eq[-1],
                color=COLOR_EQ, s=40, zorder=9)
 
-    upper = eq * (1 + BAND_ABOVE)
-    lower = eq * (1 - BAND_BELOW)
+    # -----------------------------
+    # FOUR BANDS
+    # -----------------------------
+    upper_entry = eq * (1 + BAND_SHORT_ENTRY)
+    lower_entry = eq * (1 - BAND_LONG_ENTRY)
 
-    ax.plot(d[DATE_COL], upper, color=COLOR_UPPER, linewidth=1.2)
-    ax.plot(d[DATE_COL], lower, color=COLOR_LOWER, linewidth=1.2)
+    upper_exit = eq * (1 + BAND_SHORT_EXIT) if BAND_SHORT_EXIT is not None else eq
+    lower_exit = eq * (1 - BAND_LONG_EXIT)  if BAND_LONG_EXIT  is not None else eq
+
+    ax.plot(d[DATE_COL], upper_entry, color=COLOR_UPPER, linewidth=1.2)
+    ax.plot(d[DATE_COL], lower_entry, color=COLOR_LOWER, linewidth=1.2)
+
+    if BAND_SHORT_EXIT is not None:
+        ax.plot(d[DATE_COL], upper_exit, color=COLOR_EXIT, linewidth=1.0, alpha=0.5)
+
+    if BAND_LONG_EXIT is not None:
+        ax.plot(d[DATE_COL], lower_exit, color=COLOR_EXIT, linewidth=1.0, alpha=0.5)
 
     close_px = d[PRICE_COL].iloc[-1]
     high_px  = d[HIGH_COL].iloc[-1]
     low_px   = d[LOW_COL].iloc[-1]
 
-    eq_now = eq[-1]
-    ub = upper[-1]
-    lb = lower[-1]
     date = d[DATE_COL].iloc[-1]
 
     # -----------------------------
-    # STATE MACHINE (UNCHANGED)
+    # STATE MACHINE (FIXED)
     # -----------------------------
-    if position is None and close_px < lb:
-        long_entries.append((date, lb - arrow_offset))
+    if position is None and (d[PRICE_COL].values[last_flat_idx:] < lower_entry[last_flat_idx:]).any():
+        long_entries.append((date, lower_entry[-1] - arrow_offset))
         position = "LONG"
 
-    elif position == "LONG" and high_px >= eq_now:
-        exits.append((date, eq_now, COLOR_LOWER))
+    elif position == "LONG" and high_px >= lower_exit[-1]:
+        exits.append((date, lower_exit[-1], COLOR_LOWER))
         position = None
+        last_flat_idx = len(d) - 1
 
-    if position is None and close_px > ub:
-        short_entries.append((date, ub + arrow_offset))
+    if position is None and (d[PRICE_COL].values[last_flat_idx:] > upper_entry[last_flat_idx:]).any():
+        short_entries.append((date, upper_entry[-1] + arrow_offset))
         position = "SHORT"
 
-    elif position == "SHORT" and low_px <= eq_now:
-        exits.append((date, eq_now, COLOR_UPPER))
+    elif position == "SHORT" and low_px <= upper_exit[-1]:
+        exits.append((date, upper_exit[-1], COLOR_UPPER))
         position = None
+        last_flat_idx = len(d) - 1
 
     # -----------------------------
     # MARKERS
