@@ -22,24 +22,22 @@ r = np.exp(b * theta)
 # Long-cycle anchors (SPX separated at 493) + add AMZN & CAT
 # -----------------------------
 cycles = {
-    "Uber (206)": 206,
     "Bitcoin (237)": 237,
-    "AMZN (268)": 268,           # Innovation basin, slightly below 291
-    "NVDA (291)": 291,           # Heart of Innovation basin
-    "CAT (308)": 308,            # Innovation basin, slightly above 291
-    "SPX (493 primary)": 493,    # SPX separated at 493
-    "DXY / XLE / SMH (362)": 362,
-    "Crude / Gold (510)": 510
+    "Uber (260)": 260,
+    "AMZN (385)": 385,           
+    "XLE (408)": 408,
+    "Crude / Gold (510)": 510,
+    "SPX (528)": 528,
+    "CAT (541)": 541,        
 }
 colors = {
-    "Uber (206)": "orange",
-    "Bitcoin (237)": "tab:green",
-    "AMZN (268)": "tab:purple",
-    "NVDA (291)": "tab:cyan",  
-    "CAT (308)": "tab:olive",
-    "SPX (493 primary)": "tab:blue",  # distinct color for SPX
-    "DXY / XLE / SMH (362)": "tab:red",
-    "Crude / Gold (510)": "tab:pink",
+    "Bitcoin (237)": "tab:blue",
+    "Uber (260)": "tab:green",
+    "AMZN (385)": "tab:olive",
+    "XLE (408)": "tab:purple",
+    "Crude / Gold (510)": "tab:red",
+    "SPX (528)": "tab:pink",
+    "CAT (541)": "tab:orange",
 }
 
 # Compute marker positions and radial limit
@@ -60,7 +58,7 @@ guide_rs = [np.exp(b * theta_of_L(L)) for L in guide_levels]
 # -----------------------------
 # Plot
 # -----------------------------
-fig = plt.figure(figsize=(10, 10))
+fig = plt.figure(figsize=(8, 8))
 ax = plt.subplot(111, projection="polar")
 
 # Clean background
@@ -87,12 +85,12 @@ legend_elems = [
            markeredgecolor="black", markersize=10, label=label)
     for label in cycles.keys()
 ]
-ax.legend(handles=legend_elems, loc="upper left", bbox_to_anchor=(1.02, 1.0),
-          borderaxespad=0.0, title="Assets by Long Cycle")
+ax.legend(handles=legend_elems, loc="upper left", bbox_to_anchor=(1.0, 1.0),
+          borderaxespad=0.0, title="Assets with Plastic Cycles")
 
 # Title with math notation and extra padding
-ax.set_title(r"Capital Lattice Expressed in Plastic Spiral  $(r=\rho^{2\theta/\pi})$",
-             va="bottom", pad=30)
+# ax.set_title(r"Capital Lattice Expressed in Plastic Spiral  $(r=\rho^{2\theta/\pi})$",
+#             va="bottom", pad=30)
 
 # Hide tick labels for a clean look
 ax.set_xticklabels([])
