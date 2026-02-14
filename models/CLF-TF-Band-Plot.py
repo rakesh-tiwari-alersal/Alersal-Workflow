@@ -17,7 +17,7 @@ mpl.rcParams['animation.writer'] = 'ffmpeg'
 FILE_PATH = "historical_data/CLF.csv"
 OUTPUT_FILE = "CLF-TF-Band-Plot.mp4"
 
-START_DATE = "2024-01-01"
+START_DATE = "2023-07-01"
 END_DATE   = "2026-02-10"
 
 SHORT_CYCLE = 17
