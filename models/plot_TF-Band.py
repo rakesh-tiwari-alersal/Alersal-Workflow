@@ -22,6 +22,8 @@ parser.add_argument("-s", "--symbol", required=True)
 parser.add_argument("-t", "--start_year", type=int)
 parser.add_argument("-e", "--end_year", type=int)
 parser.add_argument("-p", "--poly", type=int)
+parser.add_argument("-a", "--alpha", type=float)
+
 args = parser.parse_args()
 
 SYMBOL = args.symbol
@@ -41,7 +43,7 @@ if matches.empty:
 row = matches.iloc[0]
 
 LONG_CYCLE, SHORT_CYCLE = map(int, row["Model S"].split(","))
-ALPHA = float(row["Alpha"])
+ALPHA = float(args.alpha) if args.alpha is not None else float(row["Alpha"])
 EQUILIBRIUM_FRAME = int(row["Equilibrium Frame"])
 POLY_ORDER = int(args.poly) if args.poly is not None else int(row["Poly Order"])
 
@@ -130,6 +132,11 @@ for i in range(EQUILIBRIUM_FRAME, len(df)):
 
 df = df.dropna(subset=["E_trend"]).reset_index(drop=True)
 df = df[df[DATE_COL] >= START_DATE].reset_index(drop=True)
+# --- NEW: guard against insufficient data ---
+if df.empty:
+    raise SystemExit(
+        f"⚠️  No equilibrium available for {SYMBOL} in {START_DATE.date()} → {END_DATE.date()}.\n"
+    )
 
 # -----------------------------
 # PLOT WINDOW
